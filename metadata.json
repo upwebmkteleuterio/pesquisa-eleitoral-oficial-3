@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Pesquisa Eleitoral ",
+  "description": "Sistema de coleta de dados eleitorais móveis com gerenciamento de cotas offline.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": []
+}

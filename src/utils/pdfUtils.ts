@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Submission, Survey, Researcher, DemographicOption } from '../types';
+import { aggregateQuestionResponses } from './responseNormalization';
 
 export const generateInterviewPDF = (
   submission: Submission,
@@ -243,25 +244,11 @@ export const generateReportPDF = (survey: Survey, submissions: Submission[]) => 
   for (const question of questions) {
     const label = reportValueToText(question.label || question.id);
     currentY = addSectionTitle(label, currentY);
-    const counts: Record<string, number> = {};
     const configuredOptions = Array.isArray(question.options) ? question.options : [];
-    configuredOptions.forEach((option: unknown) => {
-      const optionText = reportValueToText(option);
-      if (optionText !== '-') counts[optionText] = 0;
-    });
-
-    submissions.forEach(submission => {
-      const answer = submission.respostas_dinamicas?.[question.id];
-      const answers = Array.isArray(answer) ? answer : [answer];
-      answers.forEach(value => {
-        const text = reportValueToText(value);
-        if (text !== '-') counts[text] = (counts[text] || 0) + 1;
-      });
-    });
-
-    const entries = Object.entries(counts);
+    const answers = submissions.map(submission => submission.respostas_dinamicas?.[question.id]);
+    const entries = aggregateQuestionResponses(label, answers, configuredOptions);
     const rows = entries.length > 0
-      ? entries.sort((a, b) => b[1] - a[1]).map(([value, count]) => [value, String(count), reportPercentage(count, total)])
+      ? entries.map(({ name, value }) => [name, String(value), reportPercentage(value, total)])
       : [['Sem respostas', '0', '0.0%']];
     currentY = addDistributionTable(currentY, rows);
   }

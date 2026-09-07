@@ -23,6 +23,7 @@ import {
 } from 'recharts';
 import { cn } from "../../lib/utils";
 import { generateReportPDF } from "../../utils/pdfUtils";
+import { aggregateQuestionResponses } from "../../utils/responseNormalization";
 
 const COLORS = ['#10b981', '#3b82f6', '#f43f5e', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#475569'];
 
@@ -77,22 +78,24 @@ export default function Reports() {
       }));
     });
 
+    const questions = selectedSurvey?.schema_dinamico?.questions || [];
+    const questionById = new Map<string, any>(questions.map((question: any) => [question.id, question]));
+    const dynamicResponses: Record<string, unknown[]> = {};
+
     submissions.forEach(sub => {
-      Object.entries(sub.respostas_dinamicas).forEach(([key, value]) => {
-        const values = Array.isArray(value) ? value : [value];
-        values.forEach(item => {
-          if (typeof item === 'string' && item.trim()) {
-            if (!dynamicData[key]) dynamicData[key] = [];
-            const existing = dynamicData[key].find(d => d.name === item);
-            if (existing) existing.value++;
-            else dynamicData[key].push({ name: item, value: 1 });
-          }
-        });
+      Object.entries(sub.respostas_dinamicas || {}).forEach(([key, value]) => {
+        if (!dynamicResponses[key]) dynamicResponses[key] = [];
+        dynamicResponses[key].push(value);
       });
     });
 
+    Object.entries(dynamicResponses).forEach(([key, responses]) => {
+      const question = questionById.get(key);
+      dynamicData[key] = aggregateQuestionResponses(question?.label || key, responses);
+    });
+
     return { total: submissions.length, demographicData, dynamicData };
-  }, [submissions]);
+  }, [submissions, selectedSurvey]);
 
   const renderChart = (data: any[]) => {
     if (chartType === 'horizontal') {

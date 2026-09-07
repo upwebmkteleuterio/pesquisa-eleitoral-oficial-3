@@ -1,12 +1,16 @@
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import { surveyService } from "../../services/surveyService";
 import { submissionService } from "../../services/submissionService";
-import { 
+import { responseMergeService } from "../../services/responseMergeService";
+import { useAuth } from "../../contexts/AuthContext";
+import { ResponseMergeModal, type ResponseMergeOption } from "../../components/admin/ResponseMergeModal";
+import {
   PieChart as PieChartIcon,
   BarChart as BarChartIcon, Users,
-  BarChart3, LayoutList, FileDown
+  BarChart3, LayoutList, FileDown, ChevronDown,
+  GitMerge
 } from "lucide-react";
 import { 
   PieChart as RePieChart, 
@@ -38,11 +42,30 @@ const LABELS_MAP: Record<string, Record<string, string>> = {
 
 type ChartType = 'horizontal' | 'vertical' | 'pie';
 
+function getTextResponseOptions(submissions: any[] | undefined, questionId: string): ResponseMergeOption[] {
+  const counts = new Map<string, number>();
+
+  submissions?.forEach((submission) => {
+    const value = submission.respostas_dinamicas?.[questionId];
+    if (typeof value === 'string' && value.trim().length > 0) {
+      counts.set(value, (counts.get(value) || 0) + 1);
+    }
+  });
+
+  return Array.from(counts.entries())
+    .map(([value, count]) => ({ value, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
 export default function Reports() {
   const [selectedSurveyId, setSelectedSurveyId] = useState<string>("");
   const [chartType, setChartType] = useState<ChartType>('horizontal');
+  const [mergeQuestionId, setMergeQuestionId] = useState<string | null>(null);
+  const { user, profile } = useAuth();
+  const queryClient = useQueryClient();
+  const isAdmin = !!user && profile?.role === 'admin';
 
-  const { data: surveys } = useQuery({ 
+  const { data: surveys } = useQuery({
     queryKey: ['admin_surveys'], 
     queryFn: () => surveyService.getAll() 
   });
@@ -54,6 +77,43 @@ export default function Reports() {
   });
 
   const selectedSurvey = surveys?.find(survey => survey.id === selectedSurveyId);
+  const mergeQuestion = selectedSurvey?.schema_dinamico?.questions?.find(
+    (question: any) => question.id === mergeQuestionId,
+  );
+  const mergeOptions = mergeQuestionId
+    ? getTextResponseOptions(submissions, mergeQuestionId)
+    : [];
+
+  const mergeMutation = useMutation({
+    mutationFn: ({ questionId, newResponse, oldValues }: { questionId: string; newResponse: string; oldValues: string[] }) =>
+      responseMergeService.mergeManualSurveyResponses({
+        p_pesquisa_id: selectedSurveyId,
+        p_pergunta_id: questionId,
+        p_nova_resposta: newResponse,
+        p_valores_antigos: oldValues,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['submissions', selectedSurveyId] });
+      setMergeQuestionId(null);
+    },
+  });
+
+  const handleOpenMerge = (questionId: string) => {
+    if (!isAdmin || selectedSurvey?.schema_dinamico?.questions?.find((question: any) => question.id === questionId)?.type !== 'text') return;
+    mergeMutation.reset();
+    setMergeQuestionId(questionId);
+  };
+
+  const handleCloseMerge = () => {
+    if (mergeMutation.isPending) return;
+    setMergeQuestionId(null);
+    mergeMutation.reset();
+  };
+
+  const handleConfirmMerge = (newResponse: string, oldValues: string[]) => {
+    if (!mergeQuestionId || !selectedSurveyId) return;
+    mergeMutation.mutate({ questionId: mergeQuestionId, newResponse, oldValues });
+  };
 
   const handleExportPDF = () => {
     if (!selectedSurvey || !submissions?.length) return;
@@ -207,7 +267,11 @@ export default function Reports() {
               <div className="relative">
                 <select 
                   value={selectedSurveyId}
-                  onChange={(e) => setSelectedSurveyId(e.target.value)}
+                  onChange={(e) => {
+                    setMergeQuestionId(null);
+                    mergeMutation.reset();
+                    setSelectedSurveyId(e.target.value);
+                  }}
                   className="pl-6 pr-12 py-4 bg-slate-50 dark:bg-slate-800 border-2 border-outline rounded-2xl focus:border-primary transition-all font-black text-sm appearance-none cursor-pointer"
                 >
                   <option value="">Selecione uma Pesquisa...</option>
@@ -279,19 +343,35 @@ export default function Reports() {
           {/* Perguntas Dinâmicas */}
           {Object.keys(stats.dynamicData).length > 0 && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-              {(Object.entries(stats.dynamicData) as [string, any[]][]).map(([key, data]) => (
+              {(Object.entries(stats.dynamicData) as [string, any[]][]).map(([key, data]) => {
+                const question = selectedSurvey?.schema_dinamico?.questions?.find((item: any) => item.id === key);
+                return (
                 <section key={key} className="bg-white dark:bg-slate-900 p-12 rounded-[3.5rem] border border-outline shadow-sm space-y-10 animate-in fade-in zoom-in-95 duration-500">
                    <div className="flex items-start justify-between gap-4 border-b border-outline pb-6">
                       <h3 className="text-xl font-black text-on-surface leading-tight">
-                        {surveys?.find(s => s.id === selectedSurveyId)?.schema_dinamico?.questions?.find((q: any) => q.id === key)?.label || key}
+                        {question?.label || key}
                       </h3>
-                      <div className="w-12 h-12 bg-primary/5 rounded-2xl flex items-center justify-center shrink-0 text-primary border border-primary/10">
-                        <BarChartIcon size={24} />
-                      </div>
+                      {isAdmin && question?.type === 'text' ? (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenMerge(key)}
+                          className="inline-flex shrink-0 items-center gap-2 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm font-black text-primary transition hover:bg-primary/10"
+                          title="Mesclar respostas textuais"
+                          aria-label={`Mesclar respostas de ${question?.label || key}`}
+                        >
+                          <GitMerge size={20} />
+                          Mesclar
+                        </button>
+                      ) : (
+                        <div className="w-12 h-12 bg-primary/5 rounded-2xl flex items-center justify-center shrink-0 text-primary border border-primary/10">
+                          <BarChartIcon size={24} />
+                        </div>
+                      )}
                    </div>
                    {renderChart(data)}
                 </section>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -300,24 +380,16 @@ export default function Reports() {
           <p className="text-on-surface-variant font-bold">Nenhum dado coletado para esta pesquisa ainda.</p>
         </div>
       )}
-    </div>
-  );
-}
 
-function ChevronDown({ size, className }: { size: number, className?: string }) {
-  return (
-    <svg 
-      width={size} 
-      height={size} 
-      viewBox="0 0 24 24" 
-      fill="none" 
-      stroke="currentColor" 
-      strokeWidth="2.5" 
-      strokeLinecap="round" 
-      strokeLinejoin="round" 
-      className={className}
-    >
-      <path d="m6 9 6 6 6-6" />
-    </svg>
+      <ResponseMergeModal
+        isOpen={isAdmin && Boolean(mergeQuestion)}
+        questionLabel={mergeQuestion?.label || ""}
+        options={mergeOptions}
+        isSubmitting={mergeMutation.isPending}
+        error={mergeMutation.error instanceof Error ? mergeMutation.error.message : mergeMutation.error ? "Não foi possível mesclar as respostas." : null}
+        onClose={handleCloseMerge}
+        onConfirm={handleConfirmMerge}
+      />
+    </div>
   );
 }

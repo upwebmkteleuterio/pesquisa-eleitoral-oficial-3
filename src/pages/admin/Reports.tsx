@@ -71,12 +71,15 @@ export default function Reports() {
 
     submissions.forEach(sub => {
       Object.entries(sub.respostas_dinamicas).forEach(([key, value]) => {
-        if (typeof value === 'string' && value.trim()) {
-          if (!dynamicData[key]) dynamicData[key] = [];
-          const existing = dynamicData[key].find(d => d.name === value);
-          if (existing) existing.value++; 
-          else dynamicData[key].push({ name: value, value: 1 });
-        }
+        const values = Array.isArray(value) ? value : [value];
+        values.forEach(item => {
+          if (typeof item === 'string' && item.trim()) {
+            if (!dynamicData[key]) dynamicData[key] = [];
+            const existing = dynamicData[key].find(d => d.name === item);
+            if (existing) existing.value++;
+            else dynamicData[key].push({ name: item, value: 1 });
+          }
+        });
       });
     });
 
@@ -238,7 +241,7 @@ export default function Reports() {
              </div>
              
              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-y-16 gap-x-12">
-               {Object.entries(stats.demographicData).map(([key, data]) => (
+               {(Object.entries(stats.demographicData) as [string, any[]][]).map(([key, data]) => (
                  <div key={key} className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                     <div className="border-b-2 border-primary/10 pb-3">
                       <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-primary">
@@ -254,7 +257,7 @@ export default function Reports() {
           {/* Perguntas Dinâmicas */}
           {Object.keys(stats.dynamicData).length > 0 && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-              {Object.entries(stats.dynamicData).map(([key, data]) => (
+              {(Object.entries(stats.dynamicData) as [string, any[]][]).map(([key, data]) => (
                 <section key={key} className="bg-white dark:bg-slate-900 p-12 rounded-[3.5rem] border border-outline shadow-sm space-y-10 animate-in fade-in zoom-in-95 duration-500">
                    <div className="flex items-start justify-between gap-4 border-b border-outline pb-6">
                       <h3 className="text-xl font-black text-on-surface leading-tight">

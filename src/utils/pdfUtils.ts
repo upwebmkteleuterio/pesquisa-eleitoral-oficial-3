@@ -202,6 +202,59 @@ export const generateReportPDF = (survey: Survey, submissions: Submission[]) => 
     return ((doc as any).lastAutoTable?.finalY || startY) + 8;
   };
 
+  const addHorizontalBarChart = (
+    title: string,
+    entries: Array<{ name: string; value: number }>,
+    startY: number,
+  ): number => {
+    const visibleEntries = [...entries].slice(0, 8);
+    const omittedCount = Math.max(entries.length - visibleEntries.length, 0);
+    const chartTitle = doc.splitTextToSize(`${title} — gráfico de barras`, pageWidth - 30);
+    const rowHeight = 10;
+    const chartHeight = chartTitle.length * 4 + 25 + visibleEntries.length * rowHeight + (omittedCount > 0 ? 8 : 0);
+    if (startY + chartHeight > pageHeight - 20) {
+      doc.addPage();
+      startY = 24;
+    }
+
+    doc.setTextColor(5, 50, 97);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text(chartTitle, 15, startY);
+
+    const chartTop = startY + chartTitle.length * 4 + 3;
+    const labelWidth = 48;
+    const barX = 15 + labelWidth;
+    const valueX = pageWidth - 15;
+    const barWidth = valueX - barX - 28;
+    const maxValue = Math.max(...visibleEntries.map(entry => entry.value), 1);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    visibleEntries.forEach((entry, index) => {
+      const y = chartTop + index * rowHeight;
+      const label = doc.splitTextToSize(entry.name, labelWidth - 3)[0] || '-';
+      const barLength = (entry.value / maxValue) * barWidth;
+      doc.setTextColor(70, 70, 70);
+      doc.text(label, 15, y + 5);
+      doc.setFillColor(235, 239, 243);
+      doc.rect(barX, y, barWidth, 6, 'F');
+      doc.setFillColor(16, 185, 129);
+      if (barLength > 0) doc.rect(barX, y, barLength, 6, 'F');
+      doc.setTextColor(70, 70, 70);
+      doc.text(`${entry.value} (${reportPercentage(entry.value, total)})`, valueX, y + 5, { align: 'right' });
+    });
+
+    if (omittedCount > 0) {
+      const omittedY = chartTop + visibleEntries.length * rowHeight + 3;
+      doc.setTextColor(110, 110, 110);
+      doc.setFontSize(7);
+      doc.text(`Exibindo ${visibleEntries.length} de ${entries.length} opções; ${omittedCount} não exibidas no gráfico.`, 15, omittedY);
+      return omittedY + 8;
+    }
+    return chartTop + visibleEntries.length * rowHeight + 5;
+  };
+
   doc.setFillColor(5, 50, 97);
   doc.rect(0, 0, pageWidth, 30, 'F');
   doc.setTextColor(255, 255, 255);
@@ -223,6 +276,7 @@ export const generateReportPDF = (survey: Survey, submissions: Submission[]) => 
   let currentY = 65;
   currentY = addSectionTitle('PERFIL DEMOGRÁFICO', currentY);
   const demographicRows: string[][] = [];
+  const demographicCharts: Array<{ title: string; entries: Array<{ name: string; value: number }> }> = [];
   ['sexo', 'faixa_etaria', 'renda', 'escolaridade', 'religiao', 'estado_civil'].forEach(category => {
     const counts: Record<string, number> = {};
     submissions.forEach(submission => {
@@ -232,13 +286,25 @@ export const generateReportPDF = (survey: Survey, submissions: Submission[]) => 
     const entries = Object.entries(counts);
     if (entries.length === 0) {
       demographicRows.push([category.replace('_', ' '), '0', '0.0%']);
+      demographicCharts.push({ title: category.replace('_', ' '), entries: [{ name: 'Sem respostas', value: 0 }] });
       return;
     }
-    entries.sort((a, b) => b[1] - a[1]).forEach(([value, count]) => {
+    const sortedEntries = [...entries].sort((a, b) => b[1] - a[1]);
+    demographicCharts.push({
+      title: category.replace('_', ' '),
+      entries: sortedEntries.map(([value, count]) => ({
+        name: REPORT_LABELS[category]?.[value] || value,
+        value: count,
+      })),
+    });
+    sortedEntries.forEach(([value, count]) => {
       demographicRows.push([`${category.replace('_', ' ')}: ${REPORT_LABELS[category]?.[value] || value}`, String(count), reportPercentage(count, total)]);
     });
   });
   currentY = addDistributionTable(currentY, demographicRows);
+  demographicCharts.forEach(chart => {
+    currentY = addHorizontalBarChart(chart.title, chart.entries, currentY);
+  });
 
   currentY = addSectionTitle('PERGUNTAS DINÂMICAS', currentY);
   for (const question of questions) {
@@ -251,6 +317,11 @@ export const generateReportPDF = (survey: Survey, submissions: Submission[]) => 
       ? entries.map(({ name, value }) => [name, String(value), reportPercentage(value, total)])
       : [['Sem respostas', '0', '0.0%']];
     currentY = addDistributionTable(currentY, rows);
+    currentY = addHorizontalBarChart(
+      label,
+      entries.length > 0 ? entries : [{ name: 'Sem respostas', value: 0 }],
+      currentY,
+    );
   }
 
   const generatedAt = format(new Date(), "dd/MM/yyyy HH:mm", { locale: ptBR });

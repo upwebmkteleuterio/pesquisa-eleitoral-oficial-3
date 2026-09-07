@@ -161,7 +161,7 @@ export default function Reports() {
     if (chartType === 'horizontal') {
       return (
         <div className="space-y-4">
-          {data.sort((a, b) => b.value - a.value).map((item, idx) => {
+          {[...data].sort((a, b) => b.value - a.value).map((item, idx) => {
             const percent = (item.value / (stats?.total || 1)) * 100;
             return (
               <div key={idx} className="bg-slate-50 dark:bg-slate-800/40 p-5 rounded-[1.5rem] space-y-3 border border-transparent hover:border-primary/20">

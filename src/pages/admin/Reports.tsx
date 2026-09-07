@@ -4,9 +4,9 @@ import { motion } from "motion/react";
 import { surveyService } from "../../services/surveyService";
 import { submissionService } from "../../services/submissionService";
 import { 
-  PieChart as PieChartIcon, 
-  BarChart as BarChartIcon, Users, 
-  BarChart3, LayoutList
+  PieChart as PieChartIcon,
+  BarChart as BarChartIcon, Users,
+  BarChart3, LayoutList, FileDown
 } from "lucide-react";
 import { 
   PieChart as RePieChart, 
@@ -22,6 +22,7 @@ import {
   Legend
 } from 'recharts';
 import { cn } from "../../lib/utils";
+import { generateReportPDF } from "../../utils/pdfUtils";
 
 const COLORS = ['#10b981', '#3b82f6', '#f43f5e', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#475569'];
 
@@ -50,6 +51,13 @@ export default function Reports() {
     queryFn: () => submissionService.getBySurveyId(selectedSurveyId),
     enabled: !!selectedSurveyId
   });
+
+  const selectedSurvey = surveys?.find(survey => survey.id === selectedSurveyId);
+
+  const handleExportPDF = () => {
+    if (!selectedSurvey || !submissions?.length) return;
+    generateReportPDF(selectedSurvey, submissions);
+  };
 
   const stats = useMemo(() => {
     if (!submissions || submissions.length === 0) return null;
@@ -228,6 +236,17 @@ export default function Reports() {
               </div>
             </div>
           </div>
+
+          <button
+            type="button"
+            onClick={handleExportPDF}
+            disabled={!selectedSurvey || submissions === undefined || submissions.length === 0}
+            className="inline-flex items-center justify-center gap-3 px-6 py-4 bg-primary text-white rounded-2xl font-black shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none disabled:hover:scale-100"
+            title="Exportar relatório em PDF"
+          >
+            <FileDown size={20} />
+            Exportar PDF
+          </button>
         </div>
       </div>
 

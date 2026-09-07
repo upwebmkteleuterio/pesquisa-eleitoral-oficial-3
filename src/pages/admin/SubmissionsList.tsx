@@ -4,10 +4,12 @@ import { surveyService } from "../../services/surveyService";
 import { submissionService } from "../../services/submissionService";
 import { userService } from "../../services/userService";
 import { exportSubmissions } from "../../utils/exportUtils";
+import { generateResponsesPDF } from "../../utils/pdfUtils";
 import { ExportModal } from "../../components/admin/ExportModal";
+import { ResponsePdfModal } from "../../components/admin/ResponsePdfModal";
 import { SubmissionEditModal } from "../../components/admin/SubmissionEditModal";
 import { Submission, SubmissionEdits } from "../../types";
-import { FileSpreadsheet, ChevronDown, Filter, Database, Calendar, Clock, User, Globe, Smartphone, UserPlus, Lightbulb } from "lucide-react";
+import { FileSpreadsheet, FileDown, ChevronDown, Filter, Database, Calendar, Clock, User, Globe, Smartphone, UserPlus, Lightbulb } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { format } from "date-fns";
 
@@ -15,6 +17,7 @@ export default function SubmissionsList() {
   const [selectedSurveyId, setSelectedSurveyId] = useState<string>("");
   const [selectedResearcherId, setSelectedResearcherId] = useState<string>("todos");
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isResponsePdfModalOpen, setIsResponsePdfModalOpen] = useState(false);
   const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -62,6 +65,21 @@ export default function SubmissionsList() {
     setIsExportModalOpen(false);
   };
 
+  const validSubmissionCount = submissions?.filter(submission => submission.valida !== false).length || 0;
+  const validCountsByMember = useMemo(() => {
+    const counts: Record<string, number> = {};
+    submissions?.filter(submission => submission.valida !== false).forEach(submission => {
+      const memberId = (submission.origem === "web" ? submission.referenciado_por : submission.pesquisador_id) || "sistema";
+      counts[memberId] = (counts[memberId] || 0) + 1;
+    });
+    return counts;
+  }, [submissions]);
+  const handleGenerateResponsesPDF = (memberId: string) => {
+    if (!selectedSurvey || !submissions?.length || validSubmissionCount === 0 || (memberId !== "todos" && !validCountsByMember[memberId])) return;
+    generateResponsesPDF(selectedSurvey, submissions, allUsers || [], memberId, demographicOptions || []);
+    setIsResponsePdfModalOpen(false);
+  };
+
   const getLabel = (category: string, value: string) => {
     if (!value) return "-";
     const option = demographicOptions?.find(item => item.categoria === category && item.valor === value);
@@ -91,7 +109,7 @@ export default function SubmissionsList() {
           <div className="flex h-full flex-col">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-outline bg-slate-50/50 px-6 py-4 dark:bg-slate-800/30">
               <div className="flex items-center gap-3"><span className="rounded-lg border border-outline bg-white px-3 py-1 text-[10px] font-black uppercase text-on-surface-variant shadow-sm dark:bg-slate-900">{filteredSubmissions.length} Registros</span></div>
-              <div className="flex items-center gap-3"><div className="relative"><select value={selectedResearcherId} onChange={event => setSelectedResearcherId(event.target.value)} className="appearance-none rounded-xl border border-outline bg-white py-2 pl-9 pr-8 text-[11px] font-bold outline-none focus:ring-2 focus:ring-primary/20 dark:bg-slate-900"><option value="todos">Todos os Membros</option>{allUsers?.map(user => <option key={user.id} value={user.id}>{user.nome} {user.role === 'admin' ? '(Adm)' : ''}</option>)}</select><User className="absolute left-3 top-1/2 -translate-y-1/2 text-primary" size={14} /><ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant" size={14} /></div><button onClick={() => setIsExportModalOpen(true)} disabled={!filteredSubmissions.length} className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white shadow-sm transition-all hover:brightness-110 active:scale-95 disabled:opacity-50"><FileSpreadsheet size={16} />Exportar</button></div>
+              <div className="flex flex-wrap items-center gap-3"><div className="relative"><select value={selectedResearcherId} onChange={event => setSelectedResearcherId(event.target.value)} className="appearance-none rounded-xl border border-outline bg-white py-2 pl-9 pr-8 text-[11px] font-bold outline-none focus:ring-2 focus:ring-primary/20 dark:bg-slate-900"><option value="todos">Todos os Membros</option>{allUsers?.map(user => <option key={user.id} value={user.id}>{user.nome} {user.role === 'admin' ? '(Adm)' : ''}</option>)}</select><User className="absolute left-3 top-1/2 -translate-y-1/2 text-primary" size={14} /><ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant" size={14} /></div><button onClick={() => setIsExportModalOpen(true)} disabled={!filteredSubmissions.length} className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white shadow-sm transition-all hover:brightness-110 active:scale-95 disabled:opacity-50"><FileSpreadsheet size={16} />Exportar</button><button type="button" onClick={() => setIsResponsePdfModalOpen(true)} disabled={!validSubmissionCount} className="inline-flex items-center justify-center gap-3 rounded-2xl bg-primary px-4 py-2 text-xs font-black text-white shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none disabled:hover:scale-100" title="Gerar respostas em PDF"><FileDown size={16} />Gerar PDF</button></div>
             </div>
             <div className="flex items-start gap-3 border-b border-primary/10 bg-primary/5 px-6 py-3 text-sm font-bold text-primary"><Lightbulb size={18} className="mt-0.5 shrink-0" /><p>Clique em uma linha para editar os dados da resposta.</p></div>
 
@@ -124,6 +142,7 @@ export default function SubmissionsList() {
       </div>
 
       <ExportModal isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)} onExport={handleExport} />
+      <ResponsePdfModal isOpen={isResponsePdfModalOpen} members={allUsers || []} validCount={validSubmissionCount} validCountsByMember={validCountsByMember} onClose={() => setIsResponsePdfModalOpen(false)} onGenerate={handleGenerateResponsesPDF} />
       <SubmissionEditModal isOpen={!!selectedSubmission} submission={selectedSubmission} survey={selectedSurvey} demographicOptions={demographicOptions} isSaving={editMutation.isPending} error={editMutation.error instanceof Error ? editMutation.error.message : editMutation.error ? "Não foi possível salvar a alteração." : null} onClose={() => { if (!editMutation.isPending) { setSelectedSubmission(null); editMutation.reset(); } }} onSave={edits => { if (selectedSubmission) editMutation.mutate({ id: selectedSubmission.id, edits }); }} />
     </div>
   );

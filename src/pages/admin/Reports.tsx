@@ -70,7 +70,7 @@ export default function Reports() {
     queryFn: () => surveyService.getAll() 
   });
 
-  const { data: submissions } = useQuery({
+  const { data: submissions, isLoading: isSubmissionsLoading } = useQuery({
     queryKey: ['submissions', selectedSurveyId, 'valid'],
     queryFn: () => submissionService.getBySurveyId(selectedSurveyId, true),
     enabled: !!selectedSurveyId
@@ -304,6 +304,10 @@ export default function Reports() {
                     <type.icon size={20} />
                   </button>
                 ))}
+              </div>
+              <div className="rounded-2xl border border-primary/15 bg-primary/5 px-4 py-3 text-center" aria-live="polite">
+                <p className="text-[10px] font-black uppercase tracking-widest text-primary">Total de respostas válidas</p>
+                <p className="mt-1 text-xl font-black text-on-surface">{isSubmissionsLoading ? "..." : validSubmissions?.length || 0}</p>
               </div>
             </div>
           </div>

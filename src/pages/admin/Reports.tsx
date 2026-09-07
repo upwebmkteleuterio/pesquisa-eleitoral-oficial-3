@@ -71,17 +71,21 @@ export default function Reports() {
   });
 
   const { data: submissions } = useQuery({
-    queryKey: ['submissions', selectedSurveyId],
-    queryFn: () => submissionService.getBySurveyId(selectedSurveyId),
+    queryKey: ['submissions', selectedSurveyId, 'valid'],
+    queryFn: () => submissionService.getBySurveyId(selectedSurveyId, true),
     enabled: !!selectedSurveyId
   });
+  const validSubmissions = useMemo(
+    () => submissions?.filter(submission => submission.valida !== false),
+    [submissions],
+  );
 
   const selectedSurvey = surveys?.find(survey => survey.id === selectedSurveyId);
   const mergeQuestion = selectedSurvey?.schema_dinamico?.questions?.find(
     (question: any) => question.id === mergeQuestionId,
   );
   const mergeOptions = mergeQuestionId
-    ? getTextResponseOptions(submissions, mergeQuestionId)
+    ? getTextResponseOptions(validSubmissions, mergeQuestionId)
     : [];
 
   const mergeMutation = useMutation({
@@ -116,19 +120,19 @@ export default function Reports() {
   };
 
   const handleExportPDF = () => {
-    if (!selectedSurvey || !submissions?.length) return;
-    generateReportPDF(selectedSurvey, submissions);
+    if (!selectedSurvey || !validSubmissions?.length) return;
+    generateReportPDF(selectedSurvey, validSubmissions);
   };
 
   const stats = useMemo(() => {
-    if (!submissions || submissions.length === 0) return null;
+    if (!validSubmissions || validSubmissions.length === 0) return null;
 
     const demographicData: Record<string, any[]> = {};
     const dynamicData: Record<string, any[]> = {};
 
     ['sexo', 'faixa_etaria', 'renda', 'escolaridade', 'religiao', 'estado_civil'].forEach(key => {
       const counts: Record<string, number> = {};
-      submissions.forEach(sub => {
+      validSubmissions.forEach(sub => {
         const val = sub.dados_fixos[key];
         if (val) counts[val] = (counts[val] || 0) + 1;
       });
@@ -142,7 +146,7 @@ export default function Reports() {
     const questionById = new Map<string, any>(questions.map((question: any) => [question.id, question]));
     const dynamicResponses: Record<string, unknown[]> = {};
 
-    submissions.forEach(sub => {
+    validSubmissions.forEach(sub => {
       Object.entries(sub.respostas_dinamicas || {}).forEach(([key, value]) => {
         if (!dynamicResponses[key]) dynamicResponses[key] = [];
         dynamicResponses[key].push(value);
@@ -154,8 +158,8 @@ export default function Reports() {
       dynamicData[key] = aggregateQuestionResponses(question?.label || key, responses);
     });
 
-    return { total: submissions.length, demographicData, dynamicData };
-  }, [submissions, selectedSurvey]);
+    return { total: validSubmissions.length, demographicData, dynamicData };
+  }, [validSubmissions, selectedSurvey]);
 
   const renderChart = (data: any[]) => {
     if (chartType === 'horizontal') {
@@ -307,7 +311,7 @@ export default function Reports() {
           <button
             type="button"
             onClick={handleExportPDF}
-            disabled={!selectedSurvey || submissions === undefined || submissions.length === 0}
+            disabled={!selectedSurvey || validSubmissions === undefined || validSubmissions.length === 0}
             className="inline-flex items-center justify-center gap-3 px-6 py-4 bg-primary text-white rounded-2xl font-black shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none disabled:hover:scale-100"
             title="Exportar relatório em PDF"
           >

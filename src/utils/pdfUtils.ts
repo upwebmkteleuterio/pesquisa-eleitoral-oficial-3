@@ -174,14 +174,15 @@ const DEMOGRAPHIC_TITLES: Record<string, string> = {
 };
 
 export const generateReportPDF = (survey: Survey, submissions: Submission[]) => {
+  const validSubmissions = submissions.filter(submission => submission.valida !== false);
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const total = submissions.length;
+  const total = validSubmissions.length;
   const questions = [...(survey.schema_dinamico?.questions || [])];
   const questionIds = new Set(questions.map((question: any) => question.id));
 
-  submissions.forEach(submission => {
+  validSubmissions.forEach(submission => {
     Object.keys(submission.respostas_dinamicas || {}).forEach(id => {
       if (!questionIds.has(id)) {
         questions.push({ id, label: id });
@@ -295,7 +296,7 @@ export const generateReportPDF = (survey: Survey, submissions: Submission[]) => 
   const demographicCharts: Array<{ title: string; entries: Array<{ name: string; value: number }> }> = [];
   ['sexo', 'faixa_etaria', 'renda', 'escolaridade', 'religiao', 'estado_civil'].forEach(category => {
     const counts: Record<string, number> = {};
-    submissions.forEach(submission => {
+    validSubmissions.forEach(submission => {
       const value = reportValueToText(submission.dados_fixos?.[category]);
       if (value !== '-') counts[value] = (counts[value] || 0) + 1;
     });
@@ -327,7 +328,7 @@ export const generateReportPDF = (survey: Survey, submissions: Submission[]) => 
     const label = reportValueToText(question.label || question.id);
     currentY = addSectionTitle(label, currentY);
     const configuredOptions = Array.isArray(question.options) ? question.options : [];
-    const answers = submissions.map(submission => submission.respostas_dinamicas?.[question.id]);
+    const answers = validSubmissions.map(submission => submission.respostas_dinamicas?.[question.id]);
     const entries = aggregateQuestionResponses(label, answers, configuredOptions);
     const rows = entries.length > 0
       ? entries.map(({ name, value }) => [name, String(value), reportPercentage(value, total)])

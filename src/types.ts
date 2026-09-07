@@ -7,6 +7,7 @@ export interface Researcher {
   cpf: string;
   foto_avatar_url: string;
   usuario_id: string;
+  role?: string;
 }
 
 export interface Region {
@@ -55,6 +56,15 @@ export interface Submission {
   geolocalizacao: { lat: number; lng: number };
   data_coleta: string;
   status_sincronizacao: boolean;
+  valida: boolean;
   origem?: 'app' | 'web';
   referenciado_por?: string;
+}
+
+export interface SubmissionEdits {
+  nome_entrevistado?: string;
+  bairro?: string;
+  telefone?: string;
+  dados_fixos?: Record<string, string>;
+  respostas_dinamicas?: Record<string, any>;
 }

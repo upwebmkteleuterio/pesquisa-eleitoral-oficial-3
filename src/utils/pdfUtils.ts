@@ -157,6 +157,22 @@ const reportPercentage = (count: number, total: number): string => (
   `${total > 0 ? ((count / total) * 100).toFixed(1) : '0.0'}%`
 );
 
+const formatChartTitle = (title: string): string => {
+  const trimmed = title.trim();
+  if (!trimmed) return '.';
+  const capitalized = trimmed.charAt(0).toLocaleUpperCase('pt-BR') + trimmed.slice(1);
+  return capitalized.endsWith('.') ? capitalized : `${capitalized}.`;
+};
+
+const DEMOGRAPHIC_TITLES: Record<string, string> = {
+  sexo: 'Sexo',
+  faixa_etaria: 'Faixa Etária',
+  renda: 'Renda',
+  escolaridade: 'Escolaridade',
+  religiao: 'Religião',
+  estado_civil: 'Estado Civil',
+};
+
 export const generateReportPDF = (survey: Survey, submissions: Submission[]) => {
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -207,9 +223,9 @@ export const generateReportPDF = (survey: Survey, submissions: Submission[]) => 
     entries: Array<{ name: string; value: number }>,
     startY: number,
   ): number => {
-    const visibleEntries = [...entries].slice(0, 8);
+    const visibleEntries = [...entries].slice(0, 10);
     const omittedCount = Math.max(entries.length - visibleEntries.length, 0);
-    const chartTitle = doc.splitTextToSize(`${title} — gráfico de barras`, pageWidth - 30);
+    const chartTitle = doc.splitTextToSize(formatChartTitle(title), pageWidth - 30);
     const rowHeight = 10;
     const chartHeight = chartTitle.length * 4 + 25 + visibleEntries.length * rowHeight + (omittedCount > 0 ? 8 : 0);
     if (startY + chartHeight > pageHeight - 20) {
@@ -286,19 +302,19 @@ export const generateReportPDF = (survey: Survey, submissions: Submission[]) => 
     const entries = Object.entries(counts);
     if (entries.length === 0) {
       demographicRows.push([category.replace('_', ' '), '0', '0.0%']);
-      demographicCharts.push({ title: category.replace('_', ' '), entries: [{ name: 'Sem respostas', value: 0 }] });
+      demographicCharts.push({ title: DEMOGRAPHIC_TITLES[category] || category, entries: [{ name: 'Sem respostas', value: 0 }] });
       return;
     }
     const sortedEntries = [...entries].sort((a, b) => b[1] - a[1]);
     demographicCharts.push({
-      title: category.replace('_', ' '),
+      title: DEMOGRAPHIC_TITLES[category] || category,
       entries: sortedEntries.map(([value, count]) => ({
         name: REPORT_LABELS[category]?.[value] || value,
         value: count,
       })),
     });
     sortedEntries.forEach(([value, count]) => {
-      demographicRows.push([`${category.replace('_', ' ')}: ${REPORT_LABELS[category]?.[value] || value}`, String(count), reportPercentage(count, total)]);
+      demographicRows.push([`${DEMOGRAPHIC_TITLES[category] || category}: ${REPORT_LABELS[category]?.[value] || value}`, String(count), reportPercentage(count, total)]);
     });
   });
   currentY = addDistributionTable(currentY, demographicRows);

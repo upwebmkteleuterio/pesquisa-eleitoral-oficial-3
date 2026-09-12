@@ -107,7 +107,7 @@ export function getAudioErrorMessage(error: unknown): string {
   if (name === 'NotFoundError' || name === 'DevicesNotFoundError') return 'Nenhum microfone foi encontrado neste dispositivo.';
   if (name === 'NotReadableError' || name === 'TrackStartError') return 'O microfone está ocupado ou indisponível. Feche outros aplicativos que possam estar usando-o e tente novamente.';
   if (name === 'unsupported') return 'Este navegador ou dispositivo não oferece suporte à gravação de áudio.';
-  if (name === 'recording-interrupted') return 'A gravação foi interrompida antes de 30 segundos. A coleta não pode prosseguir.';
+  if (name === 'recording-interrupted') return 'A gravação foi interrompida antes da conclusão. A coleta não pode prosseguir.';
   return 'Não foi possível concluir a gravação. Verifique o microfone e tente novamente.';
 }
 

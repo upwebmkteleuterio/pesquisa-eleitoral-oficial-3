@@ -3,7 +3,7 @@ import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { surveyService } from "../services/surveyService";
 import { submissionService } from "../services/submissionService";
-import { ArrowLeft, ArrowRight, CheckCircle, Camera, RefreshCw, AlertTriangle, MapPin, ChevronDown } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, CheckCircle, Camera, RefreshCw, AlertTriangle, MapPin, ChevronDown } from "lucide-react";
 import { cn } from "../lib/utils";
 import { calculateFormProgress } from "../lib/progressUtils";
 import { AutoSuggestInput } from "../components/AutoSuggestInput";
@@ -122,7 +122,10 @@ export default function PublicForm() {
   );
 
   const handleFinalize = () => {
-    const unansweredQuestions = survey.schema_dinamico.questions.filter((q: any) => q.required && !dynamicAnswers[q.id]);
+    const unansweredQuestions = survey.schema_dinamico.questions.filter((q: any) => {
+      const answer = dynamicAnswers[q.id];
+      return q.required && (q.type === 'checkbox' ? !Array.isArray(answer) || answer.length === 0 : !answer);
+    });
     
     if (unansweredQuestions.length > 0) {
       setValidationAlert(`Por favor, responda a pergunta: "${unansweredQuestions[0].label}"`);
@@ -337,9 +340,47 @@ export default function PublicForm() {
                     </div>
                   )}
 
+                  {q.type === 'checkbox' && (
+                    <div className="space-y-3">
+                      {q.options.map((opt: string) => {
+                        const selectedOptions: string[] = Array.isArray(dynamicAnswers[q.id]) ? dynamicAnswers[q.id] : [];
+                        const isSelected = selectedOptions.includes(opt);
+                        
+                        return (
+                          <label key={opt} className={cn(
+                            "flex items-center p-5 border-2 rounded-2xl cursor-pointer transition-all focus-within:ring-2 focus-within:ring-primary/20",
+                            isSelected
+                              ? "bg-primary/5 border-primary text-primary"
+                              : "bg-slate-50 border-transparent text-on-surface-variant"
+                          )}>
+                            <input
+                              type="checkbox"
+                              className="sr-only"
+                              checked={isSelected}
+                              onChange={() => {
+                                const currentOptions: string[] = Array.isArray(dynamicAnswers[q.id]) ? dynamicAnswers[q.id] : [];
+                                const nextOptions = currentOptions.includes(opt)
+                                  ? currentOptions.filter((selectedOption) => selectedOption !== opt)
+                                  : [...currentOptions, opt];
+                                setDynamicAnswers({ ...dynamicAnswers, [q.id]: nextOptions });
+                              }}
+                            />
+                            <span className={cn(
+                              "mr-3 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition-all",
+                              isSelected ? "border-primary bg-primary text-white" : "border-outline bg-white dark:bg-slate-800"
+                            )} aria-hidden="true">
+                              {isSelected && <Check size={16} strokeWidth={3} />}
+                            </span>
+                            <span className="text-base font-black">{opt}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+
                   {q.type === 'text' && (
-                    <input 
-                      className="w-full h-14 px-4 rounded-2xl border border-outline bg-slate-50 dark:bg-slate-800 font-bold" 
+                    <input
+                      className="w-full h-14 px-4 rounded-2xl border border-outline bg-slate-50 dark:bg-slate-800 font-bold"
                       placeholder="Sua resposta..."
                       value={dynamicAnswers[q.id] || ""}
                       onChange={(e) => setDynamicAnswers({ ...dynamicAnswers, [q.id]: e.target.value })}

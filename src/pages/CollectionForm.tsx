@@ -8,6 +8,8 @@ import { ArrowLeft, ArrowRight, CheckCircle, Camera, RefreshCw, AlertTriangle, M
 import { cn } from "../lib/utils";
 import { calculateFormProgress } from "../lib/progressUtils";
 import { AutoSuggestInput } from "../components/AutoSuggestInput";
+import { AudioConsentGate } from "../components/AudioConsentGate";
+import { SubmissionAudio } from "../types";
 
 import { useAuth } from "../contexts/AuthContext";
 
@@ -30,6 +32,7 @@ export default function CollectionForm() {
   const [quotaAlert, setQuotaAlert] = useState<string | null>(null);
   const [validationAlert, setValidationAlert] = useState<string | null>(null);
   const [localSuggestions, setLocalSuggestions] = useState<Record<string, string[]>>({});
+  const [audioSession, setAudioSession] = useState<SubmissionAudio | null>(null);
 
   // Query otimizada: O surveyService agora tenta o cache primeiro
   const { data: survey, isLoading: isLoadingSurvey, isError: surveyError, refetch: retrySurvey } = useQuery({
@@ -54,6 +57,7 @@ export default function CollectionForm() {
   useEffect(() => {
     if (id && (!currentCollection || currentCollection.surveyId !== id)) {
       startCollection(id);
+      setAudioSession(null);
     }
     
     // GPS Capture
@@ -161,6 +165,10 @@ export default function CollectionForm() {
     );
   }
 
+  if (!audioSession) {
+    return <AudioConsentGate onComplete={setAudioSession} onBack={() => navigate(-1)} />;
+  }
+
   const currentProgress = calculateFormProgress(
     currentCollection.respondentData,
     currentCollection.dynamicAnswers,
@@ -184,7 +192,8 @@ export default function CollectionForm() {
       dados_fixos: currentCollection.respondentData,
       respostas_dinamicas: currentCollection.dynamicAnswers,
       geolocalizacao: location || { lat: 0, lng: 0 },
-      data_coleta: new Date().toISOString()
+      data_coleta: new Date().toISOString(),
+      audio: audioSession || undefined
     });
   };
 

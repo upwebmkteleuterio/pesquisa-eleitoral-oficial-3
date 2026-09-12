@@ -1,8 +1,10 @@
 import localforage from "localforage";
 import { supabase } from "@/src/integrations/supabase/client";
+import { getAudioExtension } from "./audioService";
 import { Submission, SubmissionEdits } from "../types";
 
 const SUBMISSIONS_KEY = "electoral_submissions";
+const AUDIO_BUCKET = "submission-audio";
 const FIXED_FIELDS = ["sexo", "faixa_etaria", "escolaridade", "renda", "religiao", "estado_civil"] as const;
 
 type SubmissionRecord = Record<string, any>;
@@ -28,7 +30,14 @@ export const mapSubmission = (d: SubmissionRecord): Submission => ({
   status_sincronizacao: true,
   valida: d.valida ?? true,
   origem: d.origem,
-  referenciado_por: d.referenciado_por
+  referenciado_por: d.referenciado_por,
+  audio: d.audio_storage_path || d.audio_consent_at ? {
+    storage_path: d.audio_storage_path,
+    mime_type: d.audio_mime_type || 'audio/webm',
+    duration_seconds: d.audio_duration_seconds || 30,
+    consent_at: d.audio_consent_at,
+    consent_state: d.audio_consent_state || 'confirmed'
+  } : undefined
 });
 
 export const submissionService = {
@@ -56,11 +65,11 @@ export const submissionService = {
     return data.map(mapSubmission);
   },
 
-  async save(submission: Omit<Submission, "id" | "status_sincronizacao" | "valida"> & { valida?: boolean }): Promise<Submission> {
+  async save(submission: Omit<Submission, "id" | "status_sincronizacao" | "valida"> & { id?: string; valida?: boolean }): Promise<Submission> {
     const submissions = await this.getAll();
     const newSubmission: Submission = {
       ...submission,
-      id: crypto.randomUUID(),
+      id: submission.id || crypto.randomUUID(),
       status_sincronizacao: false,
       valida: submission.valida ?? true
     };
@@ -79,21 +88,14 @@ export const submissionService = {
   },
 
   async syncOne(submission: Submission): Promise<void> {
-    const {
-      dados_fixos,
-      respostas_dinamicas,
-      geolocalizacao,
-      data_coleta,
-      formulario_id,
-      pesquisador_id,
-      nome_entrevistado,
-      bairro,
-      telefone,
-      origem,
-      referenciado_por
-    } = submission;
+    if (!navigator.onLine) throw new Error('offline');
 
+    const { dados_fixos, respostas_dinamicas, geolocalizacao, data_coleta, formulario_id, pesquisador_id, nome_entrevistado, bairro, telefone, origem, referenciado_por } = submission;
+    const audioPath = submission.audio?.blob
+      ? `${pesquisador_id}/${submission.id}.${getAudioExtension(submission.audio.mime_type)}`
+      : submission.audio?.storage_path;
     const payload = {
+      id: submission.id,
       pesquisa_id: formulario_id,
       pesquisador_id: pesquisador_id === 'anonymous' ? null : pesquisador_id,
       nome_entrevistado,
@@ -110,20 +112,40 @@ export const submissionService = {
       data_coleta,
       valida: submission.valida ?? true,
       origem: origem || 'app',
-      referenciado_por
+      referenciado_por,
+      audio_storage_path: audioPath,
+      audio_mime_type: submission.audio?.mime_type,
+      audio_duration_seconds: submission.audio?.duration_seconds,
+      audio_consent_at: submission.audio?.consent_at,
+      audio_consent_state: submission.audio?.consent_state
     };
 
-    const { error } = await supabase
-      .from('submissoes')
-      .insert(payload);
-
+    const { error } = await supabase.from('submissoes').upsert(payload, { onConflict: 'id' });
     if (error) throw error;
 
+    if (submission.audio?.blob && audioPath) {
+      const { error: uploadError } = await supabase.storage
+        .from(AUDIO_BUCKET)
+        .upload(audioPath, submission.audio.blob, { contentType: submission.audio.mime_type, upsert: true });
+      if (uploadError) throw uploadError;
+    }
+
     const submissions = await this.getAll();
-    const updated = submissions.map(s =>
-      s.id === submission.id ? { ...s, status_sincronizacao: true } : s
-    );
+    const updated = submissions.map(s => s.id === submission.id
+      ? { ...s, status_sincronizacao: true, audio: s.audio ? { ...s.audio, blob: undefined, storage_path: audioPath } : undefined }
+      : s);
     await localforage.setItem(SUBMISSIONS_KEY, updated);
+  },
+
+  async getAudioPlaybackUrl(submission: Submission): Promise<string> {
+    if (!submission.audio?.storage_path) throw new Error('audio-unavailable');
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('not-authorized');
+    const { data: profile, error: profileError } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+    if (profileError || profile?.role !== 'admin') throw new Error('not-authorized');
+    const { data, error } = await supabase.storage.from(AUDIO_BUCKET).createSignedUrl(submission.audio.storage_path, 300);
+    if (error || !data?.signedUrl) throw error || new Error('audio-unavailable');
+    return data.signedUrl;
   },
 
   async updateValidation(id: string, valida: boolean): Promise<Submission> {
@@ -174,6 +196,7 @@ export const submissionService = {
   },
 
   async syncAll(): Promise<{ successCount: number }> {
+    if (!navigator.onLine) return { successCount: 0 };
     const submissions = await this.getAll();
     const unsynced = submissions.filter((s) => !s.status_sincronizacao);
 

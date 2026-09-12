@@ -44,6 +44,15 @@ export interface Quota {
   quantidade_atual: number;
 }
 
+export interface SubmissionAudio {
+  blob?: Blob;
+  storage_path?: string;
+  mime_type: string;
+  duration_seconds: number;
+  consent_at: string;
+  consent_state: 'confirmed';
+}
+
 export interface Submission {
   id: string;
   formulario_id: string;
@@ -59,6 +68,7 @@ export interface Submission {
   valida: boolean;
   origem?: 'app' | 'web';
   referenciado_por?: string;
+  audio?: SubmissionAudio;
 }
 
 export interface SubmissionEdits {

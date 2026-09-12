@@ -1,5 +1,6 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { motion } from "motion/react";
 import { surveyService } from "../../services/surveyService";
 import { submissionService } from "../../services/submissionService";
@@ -58,10 +59,16 @@ function getTextResponseOptions(submissions: any[] | undefined, questionId: stri
 }
 
 export default function Reports() {
-  const [selectedSurveyId, setSelectedSurveyId] = useState<string>("");
+  const [searchParams] = useSearchParams();
+  const [selectedSurveyId, setSelectedSurveyId] = useState<string>(() => searchParams.get('id') || "");
   const [chartType, setChartType] = useState<ChartType>('horizontal');
   const [mergeQuestionId, setMergeQuestionId] = useState<string | null>(null);
   const { user, profile } = useAuth();
+
+  useEffect(() => {
+    const surveyIdFromUrl = searchParams.get('id') || "";
+    setSelectedSurveyId(currentId => currentId === surveyIdFromUrl ? currentId : surveyIdFromUrl);
+  }, [searchParams]);
   const queryClient = useQueryClient();
   const isAdmin = !!user && profile?.role === 'admin';
 

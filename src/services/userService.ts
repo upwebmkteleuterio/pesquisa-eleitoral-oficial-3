@@ -61,7 +61,25 @@ export const userService = {
       .order('nome', { ascending: true });
 
     if (error) throw error;
-    return data as Client[];
+    if (!data.length) return [];
+
+    const { data: links, error: linksError } = await supabase
+      .from('pesquisa_clientes')
+      .select('cliente_id, pesquisa_id')
+      .in('cliente_id', data.map(client => client.id));
+
+    if (linksError) throw linksError;
+    const researchIdsByClient = new Map<string, string[]>();
+    links.forEach(link => {
+      const ids = researchIdsByClient.get(link.cliente_id) || [];
+      ids.push(link.pesquisa_id);
+      researchIdsByClient.set(link.cliente_id, ids);
+    });
+
+    return data.map(client => ({
+      ...client,
+      pesquisa_ids: researchIdsByClient.get(client.id) || [],
+    })) as Client[];
   },
 
   async saveResearcher(researcher: Partial<Researcher> & { password?: string }): Promise<any> {
@@ -97,9 +115,32 @@ export const userService = {
     if (error) throw error;
   },
 
-  async manageClient(payload: { action: 'create' | 'update' | 'delete'; id?: string; nome?: string; email?: string; cpf?: string; password?: string }): Promise<any> {
-    const { data, error } = await supabase.functions.invoke('manage-client', { body: payload });
-    if (error) throw error;
+  async manageClient(payload: {
+    action: 'create' | 'update' | 'delete';
+    id?: string;
+    nome?: string;
+    nome_empresa?: string;
+    email?: string;
+    cpf?: string;
+    password?: string;
+    pesquisa_ids?: string[];
+  }): Promise<any> {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) throw new Error("Sessão expirada. Faça login novamente.");
+
+    const { data, error } = await supabase.functions.invoke('manage-client', {
+      body: payload,
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    });
+    if (error) {
+      let message = error.message;
+      const context = (error as { context?: Response }).context;
+      if (context) {
+        const responseBody = await context.clone().json().catch(() => null) as { error?: unknown } | null;
+        if (typeof responseBody?.error === "string") message = responseBody.error;
+      }
+      throw new Error(message);
+    }
     return data;
   }
 };

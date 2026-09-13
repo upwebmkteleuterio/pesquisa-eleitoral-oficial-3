@@ -14,7 +14,9 @@ export interface Client {
   id: string;
   nome: string;
   email: string;
-  cpf: string;
+  cpf?: string | null;
+  nome_empresa?: string | null;
+  pesquisa_ids?: string[];
   foto_avatar_url?: string;
   role: 'cliente';
 }

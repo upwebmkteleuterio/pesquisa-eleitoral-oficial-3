@@ -9,6 +9,7 @@ import { cn } from "../lib/utils";
 import { calculateFormProgress } from "../lib/progressUtils";
 import { AutoSuggestInput } from "../components/AutoSuggestInput";
 import { AudioConsentGate } from "../components/AudioConsentGate";
+import { AudioRecordingSession, getAudioErrorMessage } from "../services/audioService";
 import { SubmissionAudio } from "../types";
 
 import { useAuth } from "../contexts/AuthContext";
@@ -32,7 +33,8 @@ export default function CollectionForm() {
   const [quotaAlert, setQuotaAlert] = useState<string | null>(null);
   const [validationAlert, setValidationAlert] = useState<string | null>(null);
   const [localSuggestions, setLocalSuggestions] = useState<Record<string, string[]>>({});
-  const [audioSession, setAudioSession] = useState<SubmissionAudio | null>(null);
+  const [audioSession, setAudioSession] = useState<AudioRecordingSession | null>(null);
+  const [isWaitingAudio, setIsWaitingAudio] = useState(false);
 
   // Query otimizada: O surveyService agora tenta o cache primeiro
   const { data: survey, isLoading: isLoadingSurvey, isError: surveyError, refetch: retrySurvey } = useQuery({

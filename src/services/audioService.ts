@@ -1,5 +1,19 @@
 export type AudioPermissionState = 'prompt' | 'granted' | 'denied' | 'unsupported';
 
+export interface AudioRecordingResult {
+  blob: Blob;
+  mimeType: string;
+  durationSeconds: number;
+}
+
+export interface AudioRecordingSession {
+  completed: Promise<AudioRecordingResult>;
+  consentAt: string;
+  cancel: () => void;
+}
+
+const AUDIO_DURATION_MS = 45_000;
+const MINIMUM_AUDIO_DURATION_MS = 44_500;
 const preferredMimeTypes = [
   'audio/webm;codecs=opus',
   'audio/webm',
@@ -25,7 +39,7 @@ export async function getAudioPermission(): Promise<AudioPermissionState> {
   }
 }
 
-export async function recordAudio(): Promise<{ blob: Blob; mimeType: string; durationSeconds: number }> {
+export async function startAudioRecording(consentAt: string): Promise<AudioRecordingSession> {
   if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
     throw new Error('unsupported');
   }
@@ -41,64 +55,88 @@ export async function recordAudio(): Promise<{ blob: Blob; mimeType: string; dur
     stream.getTracks().forEach(track => track.stop());
     throw new Error('recording-failed');
   }
+
   const chunks: Blob[] = [];
   const startedAt = Date.now();
-
-  return new Promise((resolve, reject) => {
-    let finished = false;
-    let timer: number | undefined;
-
-    const cleanup = () => {
-      if (timer) window.clearTimeout(timer);
-      stream.getTracks().forEach(track => track.stop());
-    };
-    const fail = (error: Error) => {
-      if (finished) return;
-      finished = true;
-      cleanup();
-      reject(error);
-    };
-
-    recorder.ondataavailable = event => {
-      if (event.data.size > 0) chunks.push(event.data);
-    };
-    recorder.onerror = () => fail(new Error('recording-failed'));
-    recorder.onstop = () => {
-      if (finished) return;
-      finished = true;
-      cleanup();
-      const duration = Date.now() - startedAt;
-      if (duration < 29_500) {
-        reject(new Error('recording-interrupted'));
-        return;
-      }
-      const blob = new Blob(chunks, { type: recorder.mimeType || mimeType || 'audio/webm' });
-      if (blob.size === 0) {
-        reject(new Error('recording-failed'));
-        return;
-      }
-      resolve({
-        blob,
-        mimeType: recorder.mimeType || mimeType || 'audio/webm',
-        durationSeconds: 30,
-      });
-    };
-
-    stream.getTracks().forEach(track => {
-      track.onended = () => {
-        if (Date.now() - startedAt < 29_500) fail(new Error('recording-interrupted'));
-      };
-    });
-
-    try {
-      recorder.start();
-      timer = window.setTimeout(() => {
-        if (recorder.state === 'recording') recorder.stop();
-      }, 30_000);
-    } catch {
-      fail(new Error('recording-failed'));
-    }
+  let finished = false;
+  let timer: number | undefined;
+  let resolveCompleted!: (result: AudioRecordingResult) => void;
+  let rejectCompleted!: (error: Error) => void;
+  const completed = new Promise<AudioRecordingResult>((resolve, reject) => {
+    resolveCompleted = resolve;
+    rejectCompleted = reject;
   });
+
+  const cleanup = () => {
+    if (timer) window.clearTimeout(timer);
+    stream.getTracks().forEach(track => track.stop());
+  };
+
+  const fail = (error: Error) => {
+    if (finished) return;
+    finished = true;
+    cleanup();
+    rejectCompleted(error);
+  };
+
+  recorder.ondataavailable = event => {
+    if (event.data.size > 0) chunks.push(event.data);
+  };
+  recorder.onerror = () => fail(new Error('recording-failed'));
+  recorder.onstop = () => {
+    if (finished) return;
+    finished = true;
+    cleanup();
+    const duration = Date.now() - startedAt;
+    if (duration < MINIMUM_AUDIO_DURATION_MS) {
+      rejectCompleted(new Error('recording-interrupted'));
+      return;
+    }
+    const finalMimeType = recorder.mimeType || mimeType || 'audio/webm';
+    const blob = new Blob(chunks, { type: finalMimeType });
+    if (blob.size === 0) {
+      rejectCompleted(new Error('recording-failed'));
+      return;
+    }
+    resolveCompleted({ blob, mimeType: finalMimeType, durationSeconds: 45 });
+  };
+
+  const interrupt = () => {
+    if (finished) return;
+    if (recorder.state === 'recording') {
+      try {
+        recorder.stop();
+      } catch {
+        fail(new Error('recording-interrupted'));
+      }
+    }
+    fail(new Error('recording-interrupted'));
+  };
+
+  stream.getTracks().forEach(track => {
+    track.onended = interrupt;
+  });
+
+  try {
+    recorder.start();
+    timer = window.setTimeout(() => {
+      if (recorder.state === 'recording') recorder.stop();
+    }, AUDIO_DURATION_MS);
+  } catch {
+    cleanup();
+    throw new Error('recording-failed');
+  }
+
+  return {
+    completed,
+    consentAt,
+    cancel: () => {
+      if (finished) return;
+      finished = true;
+      cleanup();
+      rejectCompleted(new Error('recording-cancelled'));
+    },
+  };
 }
 
 export function getAudioErrorMessage(error: unknown): string {
@@ -108,6 +146,7 @@ export function getAudioErrorMessage(error: unknown): string {
   if (name === 'NotReadableError' || name === 'TrackStartError') return 'O microfone está ocupado ou indisponível. Feche outros aplicativos que possam estar usando-o e tente novamente.';
   if (name === 'unsupported') return 'Este navegador ou dispositivo não oferece suporte à gravação de áudio.';
   if (name === 'recording-interrupted') return 'A gravação foi interrompida antes da conclusão. A coleta não pode prosseguir.';
+  if (name === 'recording-cancelled') return 'A gravação foi cancelada. Inicie a coleta novamente para continuar.';
   return 'Não foi possível concluir a gravação. Verifique o microfone e tente novamente.';
 }
 

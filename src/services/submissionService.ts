@@ -217,22 +217,24 @@ export const submissionService = {
     return updated;
   },
 
-  async syncAll(): Promise<{ successCount: number }> {
-    if (!navigator.onLine) return { successCount: 0 };
+  async syncAll(): Promise<{ successCount: number; failureCount: number; totalCount: number }> {
+    if (!navigator.onLine) return { successCount: 0, failureCount: 0, totalCount: 0 };
     const submissions = await this.getAll();
     const unsynced = submissions.filter((s) => !s.status_sincronizacao);
 
     let successCount = 0;
+    let failureCount = 0;
     for (const sub of unsynced) {
       try {
         await this.syncOne(sub);
         successCount++;
       } catch (e) {
+        failureCount++;
         console.error(`[submissionService] Failed to sync submission ${sub.id}`, e);
       }
     }
 
-    return { successCount };
+    return { successCount, failureCount, totalCount: unsynced.length };
   },
 
   async getBySurveyId(surveyId: string, onlyValid = false, userId?: string, clientRead = false): Promise<Submission[]> {

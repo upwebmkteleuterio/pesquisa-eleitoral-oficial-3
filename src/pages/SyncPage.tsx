@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { submissionService } from "../services/submissionService";
 import { surveyService } from "../services/surveyService";
-import { RefreshCw, CloudUpload, CheckCircle, Wifi, WifiOff, FileText, Calendar, Clock } from "lucide-react";
+import { RefreshCw, CloudUpload, CheckCircle, AlertCircle, WifiOff, FileText, Calendar, Clock } from "lucide-react";
 import { cn } from "../lib/utils";
 import { useState, useEffect } from "react";
 
@@ -24,10 +24,21 @@ export default function SyncPage() {
 
   const syncMutation = useMutation({
     mutationFn: () => submissionService.syncAll(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['submissions'] });
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ['submissions'] });
     }
   });
+
+  const syncResult = syncMutation.data;
+  const syncMessage = syncMutation.isError
+    ? "Não foi possível sincronizar. As pesquisas continuam pendentes para nova tentativa."
+    : syncResult && syncResult.failureCount === 0
+      ? `Sincronização concluída: ${syncResult.successCount} pesquisa(s) sincronizada(s) e 0 falharam.`
+      : syncResult && syncResult.successCount > 0
+        ? `Sincronização parcial: ${syncResult.successCount} pesquisa(s) sincronizada(s) e ${syncResult.failureCount} pesquisa(s) falharam. As falhas continuam pendentes.`
+        : syncResult
+          ? `Não foi possível sincronizar: ${syncResult.failureCount} pesquisa(s) falharam e continuam pendentes.`
+          : null;
 
   useEffect(() => {
     const handleStatus = () => setIsOnline(navigator.onLine);
@@ -61,7 +72,7 @@ export default function SyncPage() {
         <h3 className="text-4xl font-bold mb-2 text-on-surface">{pendingCount}</h3>
         <p className="text-on-surface-variant mb-8 max-w-[200px] font-medium">Pesquisas pendentes para sincronização</p>
         
-        <button 
+        <button
           onClick={() => syncMutation.mutate()}
           disabled={pendingCount === 0 || syncMutation.isPending || !isOnline}
           className="w-full bg-primary text-white h-14 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 disabled:grayscale transition-all"
@@ -69,6 +80,23 @@ export default function SyncPage() {
           <RefreshCw size={20} className={cn(syncMutation.isPending && "animate-spin")} />
           {syncMutation.isPending ? "Sincronizando..." : "Sincronizar Agora"}
         </button>
+
+        {!syncMutation.isPending && syncMessage && (
+          <div
+            role="status"
+            className={cn(
+              "mt-4 flex items-start gap-2 rounded-lg px-3 py-2 text-sm font-medium",
+              syncMutation.isError || (syncResult?.failureCount ?? 0) > 0
+                ? "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400"
+                : "bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400"
+            )}
+          >
+            {syncMutation.isError || (syncResult?.failureCount ?? 0) > 0
+              ? <AlertCircle size={18} className="mt-0.5 shrink-0" />
+              : <CheckCircle size={18} className="mt-0.5 shrink-0" />}
+            <span>{syncMessage}</span>
+          </div>
+        )}
         
         {!isOnline && (
            <p className="mt-4 text-xs text-red-500 flex items-center gap-1">

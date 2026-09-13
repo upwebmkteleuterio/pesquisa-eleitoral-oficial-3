@@ -122,13 +122,27 @@ export const submissionService = {
   },
 
   async getAllSynced(): Promise<Submission[]> {
-    const { data, error } = await supabase
-      .from('submissoes')
-      .select('*');
+    const pageSize = 1000;
+    let pageStart = 0;
+    const records: SubmissionRecord[] = [];
 
-    if (error) throw error;
+    while (true) {
+      const { data, error } = await supabase
+        .from('submissoes')
+        .select('*')
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(pageStart, pageStart + pageSize - 1);
 
-    return data.map(mapSubmission);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+
+      records.push(...data);
+      if (data.length < pageSize) break;
+      pageStart += pageSize;
+    }
+
+    return records.map(mapSubmission);
   },
 
   async save(submission: Omit<Submission, "id" | "status_sincronizacao" | "valida"> & { id?: string; valida?: boolean }): Promise<Submission> {

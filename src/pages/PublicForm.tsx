@@ -32,15 +32,8 @@ export default function PublicForm() {
   
   const [location, setLocation] = useState<{ lat: number, lng: number } | null>(null);
   const [validationAlert, setValidationAlert] = useState<string | null>(null);
-  const [alreadyResponded, setAlreadyResponded] = useState(false);
 
-  // Check if already responded via localStorage
   useEffect(() => {
-    const hasResponded = localStorage.getItem(`survey_responded_${id}`);
-    if (hasResponded) {
-      setAlreadyResponded(true);
-    }
-
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
@@ -49,6 +42,21 @@ export default function PublicForm() {
       );
     }
   }, [id]);
+
+  const { data: alreadyResponded = false, isLoading: isCheckingResponse } = useQuery({
+    queryKey: ['public_response_status', id],
+    queryFn: async () => {
+      if (!localStorage.getItem(`survey_responded_${id}`)) return false;
+
+      const localSubmissions = await submissionService.getAll();
+      const hasPendingResponse = localSubmissions.some(submission =>
+        submission.formulario_id === id && submission.status_sincronizacao === false
+      );
+
+      return !hasPendingResponse;
+    },
+    enabled: !!id,
+  });
 
   const { data: survey, isLoading: isLoadingSurvey, isError: surveyError, refetch: retrySurvey } = useQuery({
     queryKey: ['survey_public', id],
@@ -74,6 +82,15 @@ export default function PublicForm() {
     }
   });
 
+  if (isLoadingSurvey || isCheckingResponse) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-surface p-10">
+        <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="text-on-surface-variant font-medium">Carregando pesquisa...</p>
+      </div>
+    );
+  }
+
   if (alreadyResponded) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-surface p-10 text-center">
@@ -82,15 +99,6 @@ export default function PublicForm() {
         </div>
         <h3 className="text-xl font-bold text-on-surface">Você já respondeu!</h3>
         <p className="text-on-surface-variant text-sm mt-2 mb-8">Obrigado pela sua participação nesta pesquisa.</p>
-      </div>
-    );
-  }
-
-  if (isLoadingSurvey) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-surface p-10">
-        <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4" />
-        <p className="text-on-surface-variant font-medium">Carregando pesquisa...</p>
       </div>
     );
   }

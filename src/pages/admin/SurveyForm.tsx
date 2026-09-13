@@ -10,7 +10,7 @@ import {
   Type, List, CheckSquare, ChevronRight, UserPlus,
   Settings, Users, Target, Info, Sparkles, Globe, AlertCircle
 } from "lucide-react";
-import { Survey, Region, Researcher, Quota, SurveyStatus } from "../../types";
+import { Survey, Region, Researcher, Client, Quota, SurveyStatus } from "../../types";
 import { cn } from "../../lib/utils";
 
 type QuestionType = 'text' | 'radio' | 'checkbox' | 'select' | 'scale';
@@ -40,6 +40,7 @@ export default function SurveyForm() {
   const [questions, setQuestions] = useState<DynamicQuestion[]>([]);
   const [limiteTotal, setLimiteTotal] = useState(100);
   const [selectedResearchers, setSelectedResearchers] = useState<string[]>([]);
+  const [selectedClients, setSelectedClients] = useState<string[]>([]);
   
   // Quota states
   const [hasTotalLimit, setHasTotalLimit] = useState(true);
@@ -49,6 +50,7 @@ export default function SurveyForm() {
   // Fetch initial data
   const { data: regions } = useQuery({ queryKey: ['regions'], queryFn: () => surveyService.getRegions() });
   const { data: allResearchers } = useQuery({ queryKey: ['researchers'], queryFn: () => userService.getAllResearchers() });
+  const { data: allClients } = useQuery({ queryKey: ['clients'], queryFn: () => userService.getAllClients() });
   const { data: demographicOptions } = useQuery({ queryKey: ['demographicOptions'], queryFn: () => surveyService.getDemographicOptions() });
   
   const { data: survey, isLoading } = useQuery({
@@ -80,6 +82,19 @@ export default function SurveyForm() {
     enabled: isEditing
   });
 
+  const { data: linkedClients } = useQuery({
+    queryKey: ['linked_clients', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('pesquisa_clientes')
+        .select('cliente_id')
+        .eq('pesquisa_id', id);
+      if (error) throw error;
+      return data.map(d => d.cliente_id);
+    },
+    enabled: isEditing
+  });
+
   const { data: existingQuotas } = useQuery({
     queryKey: ['quotas', id],
     queryFn: () => surveyService.getQuotas(id!),
@@ -104,15 +119,21 @@ export default function SurveyForm() {
   }, [linkedResearchers]);
 
   useEffect(() => {
+    if (linkedClients) {
+      setSelectedClients(linkedClients);
+    }
+  }, [linkedClients]);
+
+  useEffect(() => {
     if (existingQuotas) {
       setDemographicQuotas(existingQuotas);
     }
   }, [existingQuotas]);
 
   const saveMutation = useMutation({
-    mutationFn: async (data: Survey & { researchers: string[] }) => {
-      const { researchers, ...surveyData } = data;
-      const savedSurvey = await surveyService.save({ ...surveyData, researchers });
+    mutationFn: async (data: Survey & { researchers: string[]; clients: string[] }) => {
+      const { researchers, clients, ...surveyData } = data;
+      const savedSurvey = await surveyService.save({ ...surveyData, researchers, clients });
       await surveyService.saveQuotas(savedSurvey.id, demographicQuotas);
       return savedSurvey;
     },
@@ -244,7 +265,7 @@ export default function SurveyForm() {
       return;
     }
 
-    const payload: Survey & { researchers: string[] } = {
+    const payload: Survey & { researchers: string[]; clients: string[] } = {
       id: id || `form_${Date.now()}`,
       nome,
       regiao_id: regiaoId,
@@ -254,7 +275,8 @@ export default function SurveyForm() {
       total_coletado: survey?.total_coletado || 0,
       schema_dinamico: { questions },
       acesso_global: selectedResearchers.length === 0,
-      researchers: selectedResearchers
+      researchers: selectedResearchers,
+      clients: selectedClients
     };
 
     saveMutation.mutate(payload);
@@ -853,6 +875,26 @@ export default function SurveyForm() {
                         </button>
                       );
                     })}
+                 </div>
+
+                 <div className="space-y-5 border-t border-outline pt-8">
+                   <div className="flex items-center justify-between gap-4">
+                     <div>
+                       <h4 className="text-xl font-black text-on-surface">Vínculo com Clientes</h4>
+                       <p className="text-on-surface-variant text-sm font-medium">Clientes poderão consultar apenas respostas válidas desta pesquisa.</p>
+                     </div>
+                     <span className="rounded-2xl border border-primary/20 bg-primary/10 px-4 py-2 text-xs font-black uppercase tracking-widest text-primary">{selectedClients.length} Ativos</span>
+                   </div>
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                     {allClients?.map((client: Client) => {
+                       const isSelected = selectedClients.includes(client.id);
+                       return <button key={client.id} type="button" onClick={() => setSelectedClients(current => isSelected ? current.filter(clientId => clientId !== client.id) : [...current, client.id])} className={cn("flex items-center gap-4 rounded-3xl border-2 p-4 text-left transition-all", isSelected ? "border-primary bg-primary/5 shadow-lg shadow-primary/10" : "border-transparent bg-slate-50 dark:bg-slate-800 hover:border-outline")}>
+                         <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-xl font-black uppercase text-primary">{client.nome.charAt(0)}</div>
+                         <div className="flex-1"><p className={cn("text-sm font-bold", isSelected ? "text-primary" : "text-on-surface")}>{client.nome}</p><p className="truncate text-[10px] font-medium text-on-surface-variant">{client.email}</p></div>
+                         <div className={cn("flex h-8 w-8 items-center justify-center rounded-full", isSelected ? "bg-primary text-white" : "bg-slate-200 text-slate-400")}>{isSelected ? <UserPlus size={16} /> : <Plus size={16} />}</div>
+                       </button>;
+                     })}
+                   </div>
                  </div>
                </section>
             </div>

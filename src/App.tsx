@@ -17,6 +17,7 @@ import HistoryPage from "./pages/HistoryPage";
 
 // Admin Pages
 import ResearchersList from "./pages/admin/ResearchersList";
+import ClientsList from "./pages/admin/ClientsList";
 import SurveysList from "./pages/admin/SurveysList";
 import SurveyForm from "./pages/admin/SurveyForm";
 import RegionsList from "./pages/admin/RegionsList";
@@ -72,6 +73,21 @@ function AppRoutes() {
   }
 
   const isAdmin = profile?.role === 'admin';
+  const isClient = profile?.role === 'cliente';
+
+  if (isClient) {
+    return (
+      <Routes>
+        <Route path="/adm" element={<AdminLayout />}>
+          <Route index element={<Navigate to="/adm/respostas" replace />} />
+          <Route path="respostas" element={<SubmissionsList />} />
+          <Route path="relatorios" element={<Reports />} />
+          <Route path="*" element={<Navigate to="/adm/respostas" replace />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/adm/respostas" replace />} />
+      </Routes>
+    );
+  }
 
   return (
     <Routes>
@@ -94,6 +110,7 @@ function AppRoutes() {
         <Route path="/adm" element={<AdminLayout />}>
           <Route index element={<Navigate to="/adm/relatorios" replace />} />
           <Route path="pesquisadores" element={<ResearchersList />} />
+          <Route path="clientes" element={<ClientsList />} />
           <Route path="formularios" element={<SurveysList />} />
           <Route path="formularios/novo" element={<SurveyForm />} />
           <Route path="formularios/editar/:id" element={<SurveyForm />} />

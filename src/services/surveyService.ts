@@ -47,33 +47,57 @@ export const surveyService = {
 
   // SURVEYS
   async getAll(): Promise<Survey[]> {
-    // Se estiver offline, retorna apenas o que está no cache
+    return this.getAllForUser();
+  },
+
+  async getAllForUser(userId?: string, role?: string): Promise<Survey[]> {
+    const cacheKey = role === 'cliente' && userId ? `${SURVEYS_KEY}_${userId}` : SURVEYS_KEY;
+    const detailPrefix = role === 'cliente' && userId ? `${cacheKey}_detail_` : 'survey_detail_';
     if (!navigator.onLine) {
-      const cached = await localforage.getItem<Survey[]>(SURVEYS_KEY);
+      const cached = await localforage.getItem<Survey[]>(cacheKey);
       return cached || [];
     }
 
     try {
-      const { data, error } = await supabase
-        .from('pesquisas')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      
-      // Atualiza o cache da lista principal
-      await localforage.setItem(SURVEYS_KEY, data);
+      let surveys: Survey[];
+      if (role === 'cliente' && userId) {
+        const { data: links, error: linksError } = await supabase
+          .from('pesquisa_clientes')
+          .select('pesquisa_id')
+          .eq('cliente_id', userId)
+          .order('created_at', { ascending: false });
+        if (linksError) throw linksError;
 
-      // Em paralelo, garante que os detalhes e as cotas de cada pesquisa também estejam em cache
-      data.forEach(async (survey: Survey) => {
-        await localforage.setItem(`survey_detail_${survey.id}`, survey);
-        // Baixa as cotas silenciosamente
-        this.getQuotas(survey.id);
+        const surveyIds = links.map(link => link.pesquisa_id);
+        if (surveyIds.length === 0) {
+          surveys = [];
+        } else {
+          const { data, error } = await supabase
+            .from('pesquisas')
+            .select('*')
+            .in('id', surveyIds);
+          if (error) throw error;
+          const surveysById = new Map(data.map(survey => [survey.id, survey]));
+          surveys = surveyIds.map(surveyId => surveysById.get(surveyId)).filter(Boolean) as Survey[];
+        }
+      } else {
+        const { data, error } = await supabase
+          .from('pesquisas')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (error) throw error;
+        surveys = data as Survey[];
+      }
+
+      await localforage.setItem(cacheKey, surveys);
+      surveys.forEach(async (survey: Survey) => {
+        await localforage.setItem(`${detailPrefix}${survey.id}`, survey);
+        if (role !== 'cliente') this.getQuotas(survey.id);
       });
 
-      return data as any;
+      return surveys;
     } catch (e) {
-      const cached = await localforage.getItem<Survey[]>(SURVEYS_KEY);
+      const cached = await localforage.getItem<Survey[]>(cacheKey);
       return cached || [];
     }
   },
@@ -103,8 +127,8 @@ export const surveyService = {
     }
   },
 
-  async save(survey: Partial<Survey> & { researchers?: string[] }): Promise<Survey> {
-    const { researchers, ...surveyData } = survey;
+  async save(survey: Partial<Survey> & { researchers?: string[]; clients?: string[] }): Promise<Survey> {
+    const { researchers, clients, ...surveyData } = survey;
     
     // Remove total_coletado as it's a computed field and doesn't exist in the DB table
     const { total_coletado, ...dataToSave } = surveyData as any;
@@ -125,10 +149,22 @@ export const surveyService = {
     if (error) throw error;
 
     if (researchers) {
-      await supabase.from('pesquisa_pesquisadores').delete().eq('pesquisa_id', data.id);
+      const { error: researcherDeleteError } = await supabase.from('pesquisa_pesquisadores').delete().eq('pesquisa_id', data.id);
+      if (researcherDeleteError) throw researcherDeleteError;
       if (researchers.length > 0) {
         const links = researchers.map(rid => ({ pesquisa_id: data.id, pesquisador_id: rid }));
-        await supabase.from('pesquisa_pesquisadores').insert(links);
+        const { error: researcherInsertError } = await supabase.from('pesquisa_pesquisadores').insert(links);
+        if (researcherInsertError) throw researcherInsertError;
+      }
+    }
+
+    if (clients) {
+      const { error: clientDeleteError } = await supabase.from('pesquisa_clientes').delete().eq('pesquisa_id', data.id);
+      if (clientDeleteError) throw clientDeleteError;
+      if (clients.length > 0) {
+        const links = clients.map(cid => ({ pesquisa_id: data.id, cliente_id: cid }));
+        const { error: clientInsertError } = await supabase.from('pesquisa_clientes').insert(links);
+        if (clientInsertError) throw clientInsertError;
       }
     }
 

@@ -1,8 +1,8 @@
 import { supabase } from "@/src/integrations/supabase/client";
-import { Researcher } from "../types";
+import { Client, Researcher } from "../types";
 
 export const userService = {
-  async getProfile(): Promise<Researcher | null> {
+  async getProfile(): Promise<(Researcher | Client) | null> {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user?.id) return null;
 
@@ -46,10 +46,22 @@ export const userService = {
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
+      .neq('role', 'cliente')
       .order('nome', { ascending: true });
     
     if (error) throw error;
     return data as any;
+  },
+
+  async getAllClients(): Promise<Client[]> {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('role', 'cliente')
+      .order('nome', { ascending: true });
+
+    if (error) throw error;
+    return data as Client[];
   },
 
   async saveResearcher(researcher: Partial<Researcher> & { password?: string }): Promise<any> {
@@ -83,5 +95,11 @@ export const userService = {
       .eq('id', id);
     
     if (error) throw error;
+  },
+
+  async manageClient(payload: { action: 'create' | 'update' | 'delete'; id?: string; nome?: string; email?: string; cpf?: string; password?: string }): Promise<any> {
+    const { data, error } = await supabase.functions.invoke('manage-client', { body: payload });
+    if (error) throw error;
+    return data;
   }
 };

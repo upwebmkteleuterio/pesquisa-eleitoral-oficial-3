@@ -45,7 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // Fetch profile data in background when session is available
-  const { data: profile } = useQuery({
+  const { data: profile, isLoading: isProfileLoading } = useQuery({
     queryKey: ['profile', session?.user?.id],
     queryFn: async () => {
       if (!session?.user?.id) return null;
@@ -70,8 +70,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     <AuthContext.Provider value={{ 
       session, 
       user: session?.user ?? null, 
-      profile, 
-      isLoading,
+      profile,
+      isLoading: isLoading || isProfileLoading,
       signOut
     }}>
       {children}

@@ -10,6 +10,15 @@ export interface Researcher {
   role?: string;
 }
 
+export interface Client {
+  id: string;
+  nome: string;
+  email: string;
+  cpf: string;
+  foto_avatar_url?: string;
+  role: 'cliente';
+}
+
 export interface Region {
   id: string;
   estado: string;

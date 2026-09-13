@@ -65,22 +65,30 @@ export default function Reports() {
   const [mergeQuestionId, setMergeQuestionId] = useState<string | null>(null);
   const { user, profile } = useAuth();
 
-  useEffect(() => {
-    const surveyIdFromUrl = searchParams.get('id') || "";
-    setSelectedSurveyId(currentId => currentId === surveyIdFromUrl ? currentId : surveyIdFromUrl);
-  }, [searchParams]);
   const queryClient = useQueryClient();
   const isAdmin = !!user && profile?.role === 'admin';
+  const isClient = profile?.role === 'cliente';
 
   const { data: surveys } = useQuery({
-    queryKey: ['admin_surveys'], 
-    queryFn: () => surveyService.getAll() 
+    queryKey: ['admin_surveys', user?.id || 'anonymous', profile?.role || 'unknown'],
+    queryFn: () => surveyService.getAllForUser(user?.id, profile?.role),
+    enabled: !!user,
   });
 
+  useEffect(() => {
+    if (!surveys) return;
+    const requestedSurveyId = searchParams.get('id') || "";
+    setSelectedSurveyId(currentId => {
+      if (requestedSurveyId && surveys.some(survey => survey.id === requestedSurveyId)) return requestedSurveyId;
+      if (profile?.role === 'cliente') return surveys[0]?.id || "";
+      return requestedSurveyId || currentId;
+    });
+  }, [searchParams, surveys, profile?.role]);
+
   const { data: submissions, isLoading: isSubmissionsLoading } = useQuery({
-    queryKey: ['submissions', selectedSurveyId, 'valid'],
-    queryFn: () => submissionService.getBySurveyId(selectedSurveyId, true),
-    enabled: !!selectedSurveyId
+    queryKey: ['submissions', user?.id || 'anonymous', selectedSurveyId, 'valid'],
+    queryFn: () => submissionService.getBySurveyId(selectedSurveyId, true, profile?.role === 'cliente' ? user?.id : undefined, isClient),
+    enabled: !!selectedSurveyId && (!isClient || surveys?.some(survey => survey.id === selectedSurveyId)),
   });
   const validSubmissions = useMemo(
     () => submissions?.filter(submission => submission.valida !== false),
@@ -104,7 +112,7 @@ export default function Reports() {
         p_valores_antigos: oldValues,
       }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['submissions', selectedSurveyId] });
+      await queryClient.invalidateQueries({ queryKey: ['submissions'] });
       setMergeQuestionId(null);
     },
   });
@@ -370,7 +378,7 @@ export default function Reports() {
                         <button
                           type="button"
                           onClick={() => handleOpenMerge(key)}
-                          className="inline-flex shrink-0 items-center gap-2 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm font-black text-primary transition hover:bg-primary/10"
+                          className="inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm font-black text-primary transition hover:bg-primary/10"
                           title="Mesclar respostas textuais"
                           aria-label={`Mesclar respostas de ${question?.label || key}`}
                         >

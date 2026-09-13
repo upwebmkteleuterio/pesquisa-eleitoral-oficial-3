@@ -7,7 +7,7 @@ import { cn } from '@/src/lib/utils';
 import icon from '../assets/icon_veraxus.png';
 
 export default function Login() {
-  const { session } = useAuth();
+  const { session, profile } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -15,7 +15,7 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
 
   if (session) {
-    return <Navigate to="/" replace />;
+    return <Navigate to={profile?.role === 'cliente' ? "/adm/respostas" : "/"} replace />;
   }
 
   const handleLogin = async (e: React.FormEvent) => {

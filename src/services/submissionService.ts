@@ -5,6 +5,7 @@ import { Submission, SubmissionEdits } from "../types";
 
 const SUBMISSIONS_KEY = "electoral_submissions";
 const AUDIO_BUCKET = "submission-audio";
+const scopedSubmissionsKey = (userId?: string) => userId ? `${SUBMISSIONS_KEY}_${userId}` : SUBMISSIONS_KEY;
 const FIXED_FIELDS = ["sexo", "faixa_etaria", "escolaridade", "renda", "religiao", "estado_civil"] as const;
 
 type SubmissionRecord = Record<string, any>;
@@ -41,8 +42,8 @@ export const mapSubmission = (d: SubmissionRecord): Submission => ({
 });
 
 export const submissionService = {
-  async getAll(): Promise<Submission[]> {
-    const cached = await localforage.getItem<Submission[]>(SUBMISSIONS_KEY);
+  async getAll(userId?: string): Promise<Submission[]> {
+    const cached = await localforage.getItem<Submission[]>(scopedSubmissionsKey(userId));
     return (cached || []).map(submission => ({ ...submission, valida: submission.valida ?? true }));
   },
 
@@ -234,22 +235,29 @@ export const submissionService = {
     return { successCount };
   },
 
-  async getBySurveyId(surveyId: string, onlyValid = false): Promise<Submission[]> {
+  async getBySurveyId(surveyId: string, onlyValid = false, userId?: string, clientRead = false): Promise<Submission[]> {
     if (navigator.onLine) {
+      const clientColumns = 'id,pesquisa_id,pesquisador_id,nome_entrevistado,telefone,bairro,sexo,faixa_etaria,escolaridade,renda,religiao,respostas_dinamicas,geolocalizacao,data_coleta,created_at,estado_civil,origem,referenciado_por,audio_storage_path,audio_mime_type,audio_duration_seconds,audio_consent_at,audio_consent_state';
       let query = supabase
         .from('submissoes')
-        .select('*')
+        .select(clientRead ? clientColumns : '*')
         .eq('pesquisa_id', surveyId);
 
       if (onlyValid) query = query.eq('valida', true);
 
       const { data, error } = await query;
       if (!error && data) {
-        return data.map(mapSubmission);
+        const mapped = data.map(mapSubmission);
+        if (userId) {
+          const cached = await localforage.getItem<Submission[]>(scopedSubmissionsKey(userId)) || [];
+          const otherSurveySubmissions = cached.filter(submission => submission.formulario_id !== surveyId);
+          await localforage.setItem(scopedSubmissionsKey(userId), [...mapped, ...otherSurveySubmissions]);
+        }
+        return mapped;
       }
     }
 
-    const local = await this.getAll();
+    const local = await this.getAll(userId);
     return local.filter(s => s.formulario_id === surveyId && (!onlyValid || s.valida !== false));
   },
 

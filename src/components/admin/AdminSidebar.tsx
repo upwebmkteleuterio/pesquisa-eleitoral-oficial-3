@@ -2,6 +2,7 @@ import { Users, FileText, Map, Settings, PieChart, Database, X, Sparkles, Chevro
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "../../lib/utils";
 import { motion } from "motion/react";
+import { useAuth } from "../../contexts/AuthContext";
 
 interface AdminSidebarProps {
   isOpen: boolean;
@@ -12,12 +13,15 @@ interface AdminSidebarProps {
 
 export function AdminSidebar({ isOpen, onClose, isCollapsed, onToggleCollapse }: AdminSidebarProps) {
   const location = useLocation();
+  const { profile } = useAuth();
+  const isClient = profile?.role === 'cliente';
 
   const menuSections = [
     {
       title: "CADASTROS",
       items: [
         { icon: Users, label: "Pesquisadores", path: "/adm/pesquisadores" },
+        { icon: Users, label: "Clientes", path: "/adm/clientes" },
         { icon: FileText, label: "Formulários", path: "/adm/formularios" },
         { icon: Map, label: "Regiões", path: "/adm/regioes" },
       ]
@@ -37,6 +41,9 @@ export function AdminSidebar({ isOpen, onClose, isCollapsed, onToggleCollapse }:
       ]
     }
   ];
+  const visibleSections = isClient
+    ? [{ title: "ANÁLISE", items: menuSections[2].items.filter(item => item.path === "/adm/respostas" || item.path === "/adm/relatorios") }]
+    : menuSections;
 
   return (
     <>
@@ -85,7 +92,7 @@ export function AdminSidebar({ isOpen, onClose, isCollapsed, onToggleCollapse }:
             "flex-1 px-4 py-6 space-y-8 custom-scrollbar",
             isCollapsed ? "overflow-hidden" : "overflow-y-auto"
           )}>
-            {menuSections.map((section) => (
+            {visibleSections.map((section) => (
               <div key={section.title} className="space-y-2">
                 {!isCollapsed && (
                   <h3 className="px-4 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4">

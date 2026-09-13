@@ -10,7 +10,6 @@ import { calculateFormProgress } from "../lib/progressUtils";
 import { AutoSuggestInput } from "../components/AutoSuggestInput";
 import { AudioConsentGate } from "../components/AudioConsentGate";
 import { AudioRecordingSession, getAudioErrorMessage } from "../services/audioService";
-import { SubmissionAudio } from "../types";
 
 import { useAuth } from "../contexts/AuthContext";
 
@@ -85,6 +84,12 @@ export default function CollectionForm() {
     };
     loadSuggestions();
   }, [id, survey, currentCollection?.surveyId]);
+
+  useEffect(() => {
+    return () => {
+      audioSession?.cancel();
+    };
+  }, [audioSession]);
 
   const validateQuotas = (category: string, value: string) => {
     const option = demographicOptions?.find(o => o.categoria === category && o.valor === value);
@@ -168,7 +173,7 @@ export default function CollectionForm() {
   }
 
   if (!audioSession) {
-    return <AudioConsentGate onComplete={setAudioSession} onBack={() => navigate(-1)} />;
+    return <AudioConsentGate onStart={setAudioSession} onBack={() => navigate(-1)} />;
   }
 
   const currentProgress = calculateFormProgress(
@@ -177,13 +182,30 @@ export default function CollectionForm() {
     survey.schema_dinamico.questions.length
   );
 
-  const handleFinalize = () => {
+  const handleLeaveCollection = () => {
+    audioSession.cancel();
+    navigate(-1);
+  };
+
+  const handleFinalize = async () => {
     const unansweredQuestions = survey.schema_dinamico.questions.filter((q: any) => q.required && !currentCollection.dynamicAnswers[q.id]);
     
     if (unansweredQuestions.length > 0) {
       setValidationAlert(`Por favor, responda a pergunta: "${unansweredQuestions[0].label}"`);
       return;
     }
+
+    setIsWaitingAudio(true);
+    let recordingResult;
+    try {
+      recordingResult = await audioSession.completed;
+    } catch (recordingError) {
+      setAudioSession(null);
+      setIsWaitingAudio(false);
+      setValidationAlert(getAudioErrorMessage(recordingError));
+      return;
+    }
+    setIsWaitingAudio(false);
 
     submitMutation.mutate({
       formulario_id: id!,
@@ -195,7 +217,13 @@ export default function CollectionForm() {
       respostas_dinamicas: currentCollection.dynamicAnswers,
       geolocalizacao: location || { lat: 0, lng: 0 },
       data_coleta: new Date().toISOString(),
-      audio: audioSession || undefined
+      audio: {
+        blob: recordingResult.blob,
+        mime_type: recordingResult.mimeType,
+        duration_seconds: recordingResult.durationSeconds,
+        consent_at: audioSession.consentAt,
+        consent_state: 'confirmed'
+      }
     });
   };
 
@@ -213,10 +241,11 @@ export default function CollectionForm() {
   return (
     <div className="flex flex-col -mx-5 min-h-[calc(100vh-4rem)] bg-surface text-on-surface">
       <div className="bg-surface h-16 flex items-center justify-between px-5 border-b border-outline sticky top-0 z-40">
-        <button onClick={() => navigate(-1)} className="text-on-surface-variant hover:text-primary p-2 rounded-xl hover:bg-primary/5 transition-all"><ArrowLeft size={24} /></button>
+        <button onClick={handleLeaveCollection} className="text-on-surface-variant hover:text-primary p-2 rounded-xl hover:bg-primary/5 transition-all"><ArrowLeft size={24} /></button>
         <span className="font-bold text-primary text-lg uppercase tracking-tight truncate max-w-[200px]">{survey.nome}</span>
-        <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center border border-primary/20">
-           <span className="font-bold text-xs">V</span>
+        <div className="flex items-center gap-2 rounded-xl bg-rose-50 px-3 py-2 text-rose-600 dark:bg-rose-950/30 dark:text-rose-300">
+          <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-rose-500" />
+          <span className="text-[10px] font-black uppercase tracking-wide">Áudio ativo</span>
         </div>
       </div>
 
@@ -549,17 +578,17 @@ export default function CollectionForm() {
           <button 
             type="button"
             className="flex-1 h-16 bg-surface border border-outline rounded-2xl font-bold flex items-center justify-center gap-2 text-on-surface shadow-sm active:scale-95 transition-all"
-            onClick={currentCollection.step === 1 ? () => navigate(-1) : prevStep}
+            onClick={currentCollection.step === 1 ? handleLeaveCollection : prevStep}
           >
             <ArrowLeft size={20} /> Voltar
           </button>
-          <button 
+          <button
             type="button"
             className="flex-[2] h-16 bg-primary text-white rounded-2xl font-extrabold flex items-center justify-center gap-2 shadow-lg shadow-primary/30 active:scale-[0.98] transition-all"
             onClick={currentCollection.step === 1 ? handleNext : handleFinalize}
-            disabled={submitMutation.isPending}
+            disabled={submitMutation.isPending || isWaitingAudio}
           >
-            {submitMutation.isPending ? "Salvando..." : (
+            {submitMutation.isPending ? "Salvando..." : isWaitingAudio ? "Concluindo áudio..." : (
               currentCollection.step === 1 ? (
                 <>PRÓXIMO PASSO <ArrowRight size={20} /></>
               ) : (

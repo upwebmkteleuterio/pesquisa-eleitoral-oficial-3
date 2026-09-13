@@ -8,6 +8,7 @@ interface AdminTopBarProps {
 export function AdminTopBar({ onMenuClick }: AdminTopBarProps) {
   const { profile } = useAuth();
   const isClient = profile?.role === 'cliente';
+  const clientName = typeof profile?.nome === "string" && profile.nome.trim() ? profile.nome : "Cliente";
 
   return (
     <header className="h-16 bg-white dark:bg-slate-900 border-b border-outline flex items-center justify-between px-6 lg:px-8 z-30">
@@ -18,13 +19,13 @@ export function AdminTopBar({ onMenuClick }: AdminTopBarProps) {
         >
           <Menu size={24} />
         </button>
-        <h2 className="text-lg font-bold text-on-surface">Painel Administrativo</h2>
+        <h2 className="text-lg font-bold text-on-surface">{isClient ? `Bem-vindo, ${clientName}` : "Painel Administrativo"}</h2>
       </div>
       
       <div className="flex items-center gap-4">
         <div className="flex flex-col items-end">
           <span className="text-sm font-bold text-on-surface">{isClient ? "Cliente" : "Administrador"}</span>
-          <span className="text-[10px] text-primary font-black uppercase tracking-widest">{isClient ? "Leitura" : "Master"}</span>
+          <span className="text-[10px] text-primary font-black uppercase tracking-widest">{isClient ? "Respostas e relatórios" : "Master"}</span>
         </div>
       </div>
     </header>

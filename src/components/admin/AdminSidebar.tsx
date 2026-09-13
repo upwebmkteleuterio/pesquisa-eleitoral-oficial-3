@@ -169,17 +169,19 @@ export function AdminSidebar({ isOpen, onClose, isCollapsed, onToggleCollapse }:
               {!isCollapsed && <span className="animate-in fade-in duration-300 text-sm whitespace-nowrap">Logout</span>}
             </button>
 
-            <Link
-              to="/"
-              className={cn(
-                "flex items-center gap-3 px-4 py-3 text-slate-400 font-bold hover:text-white hover:bg-slate-800 rounded-xl transition-all",
-                isCollapsed && "justify-center px-0"
-              )}
-              title={isCollapsed ? "Sair do Painel" : ""}
-            >
-              <Settings size={20} className="shrink-0" />
-              {!isCollapsed && <span className="animate-in fade-in duration-300 text-sm whitespace-nowrap">Voltar ao App</span>}
-            </Link>
+            {!isClient && (
+              <Link
+                to="/"
+                className={cn(
+                  "flex items-center gap-3 px-4 py-3 text-slate-400 font-bold hover:text-white hover:bg-slate-800 rounded-xl transition-all",
+                  isCollapsed && "justify-center px-0"
+                )}
+                title={isCollapsed ? "Sair do Painel" : ""}
+              >
+                <Settings size={20} className="shrink-0" />
+                {!isCollapsed && <span className="animate-in fade-in duration-300 text-sm whitespace-nowrap">Voltar ao App</span>}
+              </Link>
+            )}
           </div>
         </div>
       </motion.aside>

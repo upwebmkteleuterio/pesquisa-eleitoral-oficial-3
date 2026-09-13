@@ -1,5 +1,5 @@
-import { Users, FileText, Map, Settings, PieChart, Database, X, Sparkles, ChevronLeft, ChevronRight, History } from "lucide-react";
-import { Link, useLocation } from "react-router-dom";
+import { Users, FileText, Map, Settings, PieChart, Database, X, Sparkles, ChevronLeft, ChevronRight, History, LogOut } from "lucide-react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "../../lib/utils";
 import { motion } from "motion/react";
 import { useAuth } from "../../contexts/AuthContext";
@@ -13,8 +13,14 @@ interface AdminSidebarProps {
 
 export function AdminSidebar({ isOpen, onClose, isCollapsed, onToggleCollapse }: AdminSidebarProps) {
   const location = useLocation();
-  const { profile } = useAuth();
+  const navigate = useNavigate();
+  const { profile, signOut } = useAuth();
   const isClient = profile?.role === 'cliente';
+
+  const handleLogout = async () => {
+    await signOut();
+    navigate("/login");
+  };
 
   const menuSections = [
     {
@@ -67,24 +73,34 @@ export function AdminSidebar({ isOpen, onClose, isCollapsed, onToggleCollapse }:
       >
         <div className="flex-1 flex flex-col h-full overflow-hidden">
           {/* Header */}
-          <div className={cn(
-            "p-6 flex items-center shrink-0 border-b border-slate-800/50",
-            isCollapsed ? "justify-center" : "justify-between"
-          )}>
-            {!isCollapsed && (
+          <div className="p-3 flex items-center justify-between shrink-0 border-b border-slate-800/50">
+            {!isCollapsed ? (
               <h1 className="text-xl font-black tracking-tighter text-white animate-in fade-in duration-300">
                 VERAXUS <span className="text-primary italic text-sm">ADM</span>
               </h1>
+            ) : (
+              <div className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center font-black text-xs">V</div>
             )}
-            {isCollapsed && (
-              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center font-black text-xs">V</div>
-            )}
-            <button 
-              onClick={onClose}
-              className="lg:hidden text-slate-400 hover:text-white"
-            >
-              <X size={24} />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={onToggleCollapse}
+                className="hidden lg:flex items-center justify-center p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-all"
+                title={isCollapsed ? "Expandir menu" : "Recolher menu"}
+                aria-label={isCollapsed ? "Expandir menu" : "Recolher menu"}
+              >
+                {isCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="lg:hidden text-slate-400 hover:text-white"
+                title="Fechar menu"
+                aria-label="Fechar menu"
+              >
+                <X size={24} />
+              </button>
+            </div>
           </div>
 
           {/* Navigation with Sections */}
@@ -140,15 +156,21 @@ export function AdminSidebar({ isOpen, onClose, isCollapsed, onToggleCollapse }:
           {/* Footer Actions */}
           <div className="p-4 border-t border-slate-800 space-y-2 shrink-0">
             <button
-              onClick={onToggleCollapse}
-              className="hidden lg:flex items-center gap-3 w-full px-4 py-3 text-slate-400 font-bold hover:text-white hover:bg-slate-800 rounded-xl transition-all"
+              type="button"
+              onClick={handleLogout}
+              className={cn(
+                "flex items-center gap-3 w-full px-4 py-3 text-slate-400 font-bold hover:text-white hover:bg-slate-800 rounded-xl transition-all",
+                isCollapsed && "justify-center px-0"
+              )}
+              title={isCollapsed ? "Sair" : ""}
+              aria-label="Sair"
             >
-              {isCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
-              {!isCollapsed && <span className="animate-in fade-in duration-300 text-sm whitespace-nowrap">Recolher Menu</span>}
+              <LogOut size={20} className="shrink-0" />
+              {!isCollapsed && <span className="animate-in fade-in duration-300 text-sm whitespace-nowrap">Logout</span>}
             </button>
 
-            <Link 
-              to="/" 
+            <Link
+              to="/"
               className={cn(
                 "flex items-center gap-3 px-4 py-3 text-slate-400 font-bold hover:text-white hover:bg-slate-800 rounded-xl transition-all",
                 isCollapsed && "justify-center px-0"

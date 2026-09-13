@@ -142,15 +142,15 @@ export const submissionService = {
     const updated = [newSubmission, ...submissions];
     await localforage.setItem(SUBMISSIONS_KEY, updated);
 
-    if (navigator.onLine) {
-      try {
-        await this.syncOne(newSubmission);
-      } catch (e) {
-        console.warn("[submissionService] Sync failed, item kept local", e);
-      }
-    }
+    if (!navigator.onLine) return newSubmission;
 
-    return newSubmission;
+    try {
+      await this.syncOne(newSubmission);
+      return { ...newSubmission, status_sincronizacao: true };
+    } catch (e) {
+      console.warn("[submissionService] Sync failed, item kept local", e);
+      return newSubmission;
+    }
   },
 
   async syncOne(submission: Submission): Promise<void> {

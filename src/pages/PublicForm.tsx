@@ -63,9 +63,14 @@ export default function PublicForm() {
 
   const submitMutation = useMutation({
     mutationFn: (data: any) => submissionService.save(data),
-    onSuccess: () => {
-      localStorage.setItem(`survey_responded_${id}`, 'true');
-      navigate('/p/sucesso');
+    onSuccess: (submission) => {
+      if (submission.status_sincronizacao || !navigator.onLine) {
+        localStorage.setItem(`survey_responded_${id}`, 'true');
+        navigate('/p/sucesso');
+        return;
+      }
+
+      setValidationAlert("Não foi possível enviar sua resposta agora. Ela foi salva neste dispositivo. Verifique sua conexão e tente novamente.");
     }
   });
 

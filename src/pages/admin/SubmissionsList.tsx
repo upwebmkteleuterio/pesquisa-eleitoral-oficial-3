@@ -53,6 +53,15 @@ export default function SubmissionsList() {
     }
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (submission: Submission) => submissionService.deleteById(submission.id, submission.audio?.storage_path),
+    onSuccess: (_, deletedSubmission) => {
+      queryClient.setQueryData<Submission[]>(submissionQueryKey, current => current?.filter(submission => submission.id !== deletedSubmission.id));
+      queryClient.invalidateQueries({ queryKey: ['submissions', selectedSurveyId] });
+      setSelectedSubmission(null);
+    }
+  });
+
   const selectedSurvey = useMemo(() => surveys?.find(s => s.id === selectedSurveyId), [surveys, selectedSurveyId]);
   const dynamicColumns = useMemo(() => selectedSurvey?.schema_dinamico?.questions || [], [selectedSurvey]);
   const filteredSubmissions = useMemo(() => {
@@ -88,12 +97,20 @@ export default function SubmissionsList() {
     return option ? option.label : value;
   };
 
+  const handleDelete = () => {
+    if (!selectedSubmission || deleteMutation.isPending) return;
+    const name = selectedSubmission.nome_entrevistado || "Anônimo";
+    if (!window.confirm(`Excluir permanentemente a resposta de ${name}?`)) return;
+    deleteMutation.mutate(selectedSubmission);
+  };
+
   const handleRowKeyDown = (event: KeyboardEvent<HTMLTableRowElement>, submission: Submission) => {
     if ((event.target as HTMLElement).closest("button, input, select, textarea, a")) return;
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
     setSelectedSubmission(submission);
     editMutation.reset();
+    deleteMutation.reset();
   };
 
   return (
@@ -124,7 +141,7 @@ export default function SubmissionsList() {
                     const referrer = allUsers?.find(user => user.id === submission.referenciado_por);
                     const isWeb = submission.origem === 'web';
                     const isValid = submission.valida !== false;
-                    return <tr key={submission.id} tabIndex={0} role="button" aria-label={`Editar resposta de ${submission.nome_entrevistado || 'Anônimo'}`} onClick={() => { setSelectedSubmission(submission); editMutation.reset(); }} onKeyDown={event => handleRowKeyDown(event, submission)} className={cn("cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary", isValid ? "hover:bg-slate-50/50 dark:hover:bg-slate-800/30" : "bg-slate-100/70 text-slate-500 grayscale dark:bg-slate-800/60 dark:text-slate-400")}>
+                    return <tr key={submission.id} tabIndex={0} role="button" aria-label={`Editar resposta de ${submission.nome_entrevistado || 'Anônimo'}`} onClick={() => { setSelectedSubmission(submission); editMutation.reset(); deleteMutation.reset(); }} onKeyDown={event => handleRowKeyDown(event, submission)} className={cn("cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary", isValid ? "hover:bg-slate-50/50 dark:hover:bg-slate-800/30" : "bg-slate-100/70 text-slate-500 grayscale dark:bg-slate-800/60 dark:text-slate-400")}>
                       <td className={cn("sticky left-0 z-10 px-6 py-5", isValid ? "bg-white dark:bg-slate-900" : "bg-slate-100/70 dark:bg-slate-800/60")}><label className="inline-flex cursor-pointer items-center" onClick={event => event.stopPropagation()}><input type="checkbox" role="switch" aria-label={`${isValid ? 'Marcar como inválida' : 'Marcar como válida'} a resposta de ${submission.nome_entrevistado || 'Anônimo'}`} checked={isValid} disabled={validationMutation.isPending} onChange={event => { event.stopPropagation(); setValidationError(null); validationMutation.mutate({ id: submission.id, valida: event.target.checked }); }} className="peer sr-only" /><span className="relative h-6 w-11 rounded-full bg-slate-300 transition peer-checked:bg-primary peer-disabled:cursor-not-allowed peer-disabled:opacity-60 after:absolute after:left-1 after:top-1 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow-sm after:transition peer-checked:after:translate-x-5" /></label></td>
                       <td className={cn("sticky left-[100px] z-10 px-6 py-5", isValid ? "bg-white dark:bg-slate-900" : "bg-slate-100/70 dark:bg-slate-800/60")}><span className="text-sm font-bold text-on-surface">{submission.nome_entrevistado || "Anônimo"}</span></td>
                       <td className="px-6 py-5"><div className={cn("inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[9px] font-black uppercase tracking-tighter", isWeb ? "border-blue-100 bg-blue-50 text-blue-600 dark:border-blue-800 dark:bg-blue-900/20" : "border-emerald-100 bg-emerald-50 text-emerald-600 dark:border-emerald-800 dark:bg-emerald-900/20")}>{isWeb ? <Globe size={12} /> : <Smartphone size={12} />}{submission.origem || 'app'}</div></td>
@@ -146,7 +163,7 @@ export default function SubmissionsList() {
 
       <ExportModal isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)} onExport={handleExport} />
       <ResponsePdfModal isOpen={isResponsePdfModalOpen} members={allUsers || []} validCount={validSubmissionCount} validCountsByMember={validCountsByMember} onClose={() => setIsResponsePdfModalOpen(false)} onGenerate={handleGenerateResponsesPDF} />
-      <SubmissionEditModal isOpen={!!selectedSubmission} submission={selectedSubmission} survey={selectedSurvey} demographicOptions={demographicOptions} isSaving={editMutation.isPending} error={editMutation.error instanceof Error ? editMutation.error.message : editMutation.error ? "Não foi possível salvar a alteração." : null} onClose={() => { if (!editMutation.isPending) { setSelectedSubmission(null); editMutation.reset(); } }} onSave={edits => { if (selectedSubmission) editMutation.mutate({ id: selectedSubmission.id, edits }); }} />
+      <SubmissionEditModal isOpen={!!selectedSubmission} submission={selectedSubmission} survey={selectedSurvey} demographicOptions={demographicOptions} isSaving={editMutation.isPending || deleteMutation.isPending} isDeleting={deleteMutation.isPending} error={deleteMutation.error ? "Não foi possível excluir a resposta." : editMutation.error instanceof Error ? editMutation.error.message : editMutation.error ? "Não foi possível salvar a alteração." : null} onClose={() => { if (!editMutation.isPending && !deleteMutation.isPending) { setSelectedSubmission(null); editMutation.reset(); deleteMutation.reset(); } }} onSave={edits => { if (selectedSubmission) { deleteMutation.reset(); editMutation.mutate({ id: selectedSubmission.id, edits }); } }} onDelete={handleDelete} />
       <AudioPlaybackModal submission={audioSubmission} onClose={() => setAudioSubmission(null)} />
     </div>
   );

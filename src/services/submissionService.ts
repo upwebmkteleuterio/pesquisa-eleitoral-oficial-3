@@ -166,6 +166,27 @@ export const submissionService = {
     return updated;
   },
 
+  async deleteById(id: string, audioStoragePath?: string): Promise<void> {
+    if (audioStoragePath) {
+      const { error: audioError } = await supabase.storage
+        .from(AUDIO_BUCKET)
+        .remove([audioStoragePath]);
+      if (audioError) throw audioError;
+    }
+
+    const { error } = await supabase
+      .from('submissoes')
+      .delete()
+      .eq('id', id)
+      .select('id')
+      .single();
+
+    if (error) throw error;
+
+    const submissions = await this.getAll();
+    await localforage.setItem(SUBMISSIONS_KEY, submissions.filter(submission => submission.id !== id));
+  },
+
   async updateById(id: string, edits: SubmissionEdits): Promise<Submission> {
     const payload: SubmissionRecord = {};
     if (edits.nome_entrevistado !== undefined) payload.nome_entrevistado = edits.nome_entrevistado;

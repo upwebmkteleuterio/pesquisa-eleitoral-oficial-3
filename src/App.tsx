@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { InstallPwaProvider } from "./contexts/InstallPwaContext";
+import AutomaticSync from "./components/AutomaticSync";
 import { AppLayout } from "./components/layout/AppLayout";
 import { AdminLayout } from "./components/admin/AdminLayout";
 import { useState } from "react";
@@ -133,6 +134,7 @@ function AppRoutes() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <AutomaticSync />
       <ThemeProvider>
         <InstallPwaProvider>
           <AuthProvider>

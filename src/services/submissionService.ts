@@ -9,6 +9,71 @@ const scopedSubmissionsKey = (userId?: string) => userId ? `${SUBMISSIONS_KEY}_$
 const FIXED_FIELDS = ["sexo", "faixa_etaria", "escolaridade", "renda", "religiao", "estado_civil"] as const;
 
 type SubmissionRecord = Record<string, any>;
+type SyncResult = { successCount: number; failureCount: number; totalCount: number };
+
+const RETRY_DELAYS_MS = [1000, 3000];
+let activeSync: Promise<SyncResult> | null = null;
+
+const getHttpStatus = (error: unknown): number | undefined => {
+  if (typeof error !== 'object' || error === null) return undefined;
+  const candidate = error as { status?: unknown; statusCode?: unknown };
+  const status = candidate.status ?? candidate.statusCode;
+  return typeof status === 'number' ? status : Number(status) || undefined;
+};
+
+const isPermanentHttpError = (error: unknown): boolean => {
+  const status = getHttpStatus(error);
+  return status !== undefined && status >= 400 && status < 500;
+};
+
+const waitForRetry = (delayMs: number): Promise<void> => new Promise((resolve, reject) => {
+  if (!navigator.onLine) {
+    reject(new Error('offline'));
+    return;
+  }
+
+  let timeoutId: ReturnType<typeof setTimeout>;
+  const cleanup = () => window.removeEventListener('offline', handleOffline);
+  const handleOffline = () => {
+    clearTimeout(timeoutId);
+    cleanup();
+    reject(new Error('offline'));
+  };
+
+  timeoutId = setTimeout(() => {
+    cleanup();
+    resolve();
+  }, delayMs);
+  window.addEventListener('offline', handleOffline);
+});
+
+const withNetworkRetries = async <T>(operation: () => Promise<T>): Promise<T> => {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (!navigator.onLine) throw new Error('offline');
+
+    try {
+      const result = await operation();
+      if (!navigator.onLine) throw new Error('offline');
+      return result;
+    } catch (error) {
+      if (attempt === 2 || isPermanentHttpError(error) || !navigator.onLine) throw error;
+      await waitForRetry(RETRY_DELAYS_MS[attempt]);
+    }
+  }
+
+  throw new Error('sync-retries-exhausted');
+};
+
+const runExclusiveSync = (operation: () => Promise<SyncResult>): Promise<SyncResult> => {
+  if (activeSync) return activeSync;
+
+  const execution = operation();
+  const trackedExecution = execution.finally(() => {
+    if (activeSync === trackedExecution) activeSync = null;
+  });
+  activeSync = trackedExecution;
+  return trackedExecution;
+};
 
 export const mapSubmission = (d: SubmissionRecord): Submission => ({
   id: d.id,
@@ -89,6 +154,20 @@ export const submissionService = {
   },
 
   async syncOne(submission: Submission): Promise<void> {
+    if (activeSync) {
+      await activeSync;
+      const current = (await this.getAll()).find(item => item.id === submission.id);
+      if (!current || current.status_sincronizacao) return;
+      submission = current;
+    }
+
+    await runExclusiveSync(async () => {
+      await this.syncOneInternal(submission);
+      return { successCount: 1, failureCount: 0, totalCount: 1 };
+    });
+  },
+
+  async syncOneInternal(submission: Submission): Promise<void> {
     if (!navigator.onLine) throw new Error('offline');
 
     const { dados_fixos, respostas_dinamicas, geolocalizacao, data_coleta, formulario_id, pesquisador_id, nome_entrevistado, bairro, telefone, origem, referenciado_por } = submission;
@@ -121,14 +200,18 @@ export const submissionService = {
       audio_consent_state: submission.audio?.consent_state
     };
 
-    const { error } = await supabase.from('submissoes').upsert(payload, { onConflict: 'id' });
-    if (error) throw error;
+    await withNetworkRetries(async () => {
+      const { error } = await supabase.from('submissoes').upsert(payload, { onConflict: 'id' });
+      if (error) throw error;
+    });
 
     if (submission.audio?.blob && audioPath) {
-      const { error: uploadError } = await supabase.storage
-        .from(AUDIO_BUCKET)
-        .upload(audioPath, submission.audio.blob, { contentType: submission.audio.mime_type, upsert: true });
-      if (uploadError) throw uploadError;
+      await withNetworkRetries(async () => {
+        const { error: uploadError } = await supabase.storage
+          .from(AUDIO_BUCKET)
+          .upload(audioPath, submission.audio!.blob!, { contentType: submission.audio!.mime_type, upsert: true });
+        if (uploadError) throw uploadError;
+      });
     }
 
     const submissions = await this.getAll();
@@ -217,24 +300,37 @@ export const submissionService = {
     return updated;
   },
 
-  async syncAll(): Promise<{ successCount: number; failureCount: number; totalCount: number }> {
+  async syncAll(): Promise<SyncResult> {
+    if (activeSync) return activeSync;
     if (!navigator.onLine) return { successCount: 0, failureCount: 0, totalCount: 0 };
-    const submissions = await this.getAll();
-    const unsynced = submissions.filter((s) => !s.status_sincronizacao);
 
-    let successCount = 0;
-    let failureCount = 0;
-    for (const sub of unsynced) {
-      try {
-        await this.syncOne(sub);
-        successCount++;
-      } catch (e) {
-        failureCount++;
-        console.error(`[submissionService] Failed to sync submission ${sub.id}`, e);
+    return runExclusiveSync(async () => {
+      const submissions = await this.getAll();
+      const unsynced = submissions.filter((s) => !s.status_sincronizacao);
+      let successCount = 0;
+      let failureCount = 0;
+
+      for (const [index, sub] of unsynced.entries()) {
+        if (!navigator.onLine) {
+          failureCount += unsynced.length - index;
+          break;
+        }
+
+        try {
+          await this.syncOneInternal(sub);
+          successCount++;
+        } catch (e) {
+          failureCount++;
+          console.error(`[submissionService] Failed to sync submission ${sub.id}`, e);
+          if (!navigator.onLine) {
+            failureCount += unsynced.length - index - 1;
+            break;
+          }
+        }
       }
-    }
 
-    return { successCount, failureCount, totalCount: unsynced.length };
+      return { successCount, failureCount, totalCount: unsynced.length };
+    });
   },
 
   async getBySurveyId(surveyId: string, onlyValid = false, userId?: string, clientRead = false): Promise<Submission[]> {

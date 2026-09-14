@@ -220,6 +220,11 @@ export const submissionService = {
     });
 
     if (submission.audio?.blob && audioPath) {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user || user.id !== pesquisador_id) {
+        throw new Error('audio-upload-not-authorized');
+      }
+
       await withNetworkRetries(async () => {
         const { error: uploadError } = await supabase.storage
           .from(AUDIO_BUCKET)

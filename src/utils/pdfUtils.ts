@@ -2,7 +2,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Submission, Survey, Researcher, DemographicOption } from '../types';
+import { Submission, Survey, Researcher, DemographicOption, ReportMergeCardData } from '../types';
 import { aggregateQuestionResponses } from './responseNormalization';
 
 export const generateInterviewPDF = (
@@ -355,6 +355,70 @@ export const generateReportPDF = (survey: Survey, submissions: Submission[]) => 
   }
 
   const fileName = `relatorio_${reportValueToText(survey.nome).replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').toLowerCase() || 'pesquisa'}.pdf`;
+  doc.save(fileName);
+};
+
+export const generateReportMergesPDF = (survey: Survey, cards: ReportMergeCardData[]) => {
+  if (cards.length === 0) return;
+  const doc = new jsPDF();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 15;
+
+  doc.setFillColor(5, 50, 97);
+  doc.rect(0, 0, pageWidth, 30, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(17);
+  doc.text('MESCLAGENS DEMOGRÁFICAS', margin, 14);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(reportValueToText(survey.nome), margin, 23);
+
+  let currentY = 44;
+  cards.forEach(card => {
+    const title = `${card.demographicLabel} - ${card.questionLabel}`;
+    if (currentY > pageHeight - 55) {
+      doc.addPage();
+      currentY = 24;
+    }
+    doc.setTextColor(5, 50, 97);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.text(doc.splitTextToSize(title, pageWidth - margin * 2), margin, currentY);
+    currentY += 6;
+    const rows = card.answers.length > 0
+      ? card.answers.map(answer => [
+        answer.label,
+        String(answer.total),
+        `${answer.percentage.toFixed(1)}%`,
+        answer.breakdown.map(item => `${item.label}: ${item.total} (${item.percentage.toFixed(1)}%)`).join('\n') || 'Não informado',
+      ])
+      : [['Sem respostas', '0', '0.0%', 'Não informado']];
+    autoTable(doc, {
+      startY: currentY,
+      head: [['Resposta', 'Total', '% geral', `Breakdown por ${card.demographicLabel}`]],
+      body: rows,
+      theme: 'grid',
+      margin: { top: 20, bottom: 18, left: margin, right: margin },
+      headStyles: { fillColor: [16, 185, 129], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
+      styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak', valign: 'top' },
+      columnStyles: { 0: { cellWidth: 42 }, 1: { cellWidth: 18, halign: 'right' }, 2: { cellWidth: 20, halign: 'right' }, 3: { cellWidth: pageWidth - margin * 2 - 80 } },
+      showHead: 'everyPage',
+    });
+    currentY = ((doc as any).lastAutoTable?.finalY || currentY) + 10;
+  });
+
+  const generatedAt = format(new Date(), "dd/MM/yyyy HH:mm", { locale: ptBR });
+  const pageCount = (doc.internal as any).getNumberOfPages();
+  for (let page = 1; page <= pageCount; page++) {
+    doc.setPage(page);
+    doc.setTextColor(110, 110, 110);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text(`Gerado em ${generatedAt} - Página ${page} de ${pageCount}`, pageWidth - margin, pageHeight - 9, { align: 'right' });
+  }
+  const fileName = `mesclagens_${reportValueToText(survey.nome).replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').toLowerCase() || 'pesquisa'}.pdf`;
   doc.save(fileName);
 };
 

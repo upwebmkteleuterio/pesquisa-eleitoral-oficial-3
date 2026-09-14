@@ -5,8 +5,13 @@ import { motion } from "motion/react";
 import { surveyService } from "../../services/surveyService";
 import { submissionService } from "../../services/submissionService";
 import { responseMergeService } from "../../services/responseMergeService";
+import { reportMergeService } from "../../services/reportMergeService";
 import { useAuth } from "../../contexts/AuthContext";
 import { ResponseMergeModal, type ResponseMergeOption } from "../../components/admin/ResponseMergeModal";
+import { ReportMergeActions } from "../../components/admin/ReportMergeActions";
+import { ReportMergeList } from "../../components/admin/ReportMergeList";
+import { ReportMergeModal } from "../../components/admin/ReportMergeModal";
+import type { ReportDemographicField, ReportMergeConfig } from "../../types";
 import {
   PieChart as PieChartIcon,
   BarChart as BarChartIcon, Users,
@@ -27,8 +32,9 @@ import {
   Legend
 } from 'recharts';
 import { cn } from "../../lib/utils";
-import { generateReportPDF } from "../../utils/pdfUtils";
+import { generateReportPDF, generateReportMergesPDF } from "../../utils/pdfUtils";
 import { aggregateQuestionResponses } from "../../utils/responseNormalization";
+import { buildReportMergeCard, DEMOGRAPHIC_FIELD_LABELS } from "../../utils/reportMergeUtils";
 
 const COLORS = ['#10b981', '#3b82f6', '#f43f5e', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#475569'];
 
@@ -63,6 +69,8 @@ export default function Reports() {
   const [selectedSurveyId, setSelectedSurveyId] = useState<string>(() => searchParams.get('id') || "");
   const [chartType, setChartType] = useState<ChartType>('horizontal');
   const [mergeQuestionId, setMergeQuestionId] = useState<string | null>(null);
+  const [reportMergeModalOpen, setReportMergeModalOpen] = useState(false);
+  const [editingReportMerge, setEditingReportMerge] = useState<ReportMergeConfig | null>(null);
   const { user, profile } = useAuth();
 
   const queryClient = useQueryClient();
@@ -85,11 +93,27 @@ export default function Reports() {
     });
   }, [searchParams, surveys, profile?.role]);
 
+  useEffect(() => {
+    setMergeQuestionId(null);
+    setReportMergeModalOpen(false);
+    setEditingReportMerge(null);
+    reportMergeMutation.reset();
+    reportMergeDeleteMutation.reset();
+  }, [selectedSurveyId]);
+
   const { data: submissions, isLoading: isSubmissionsLoading } = useQuery({
     queryKey: ['submissions', user?.id || 'anonymous', selectedSurveyId, 'valid'],
     queryFn: () => submissionService.getBySurveyId(selectedSurveyId, true, profile?.role === 'cliente' ? user?.id : undefined, isClient),
     enabled: !!selectedSurveyId && (!isClient || surveys?.some(survey => survey.id === selectedSurveyId)),
   });
+
+  const reportMergeQueryKey = ['report-merges', user?.id || 'anonymous', selectedSurveyId];
+  const { data: reportMerges = [] } = useQuery({
+    queryKey: reportMergeQueryKey,
+    queryFn: () => reportMergeService.listReportMerges(selectedSurveyId),
+    enabled: !!selectedSurveyId && !!user,
+  });
+
   const validSubmissions = useMemo(
     () => submissions?.filter(submission => submission.valida !== false),
     [submissions],
@@ -116,6 +140,68 @@ export default function Reports() {
       setMergeQuestionId(null);
     },
   });
+
+  const reportMergeMutation = useMutation({
+    mutationFn: async ({ id, campo_demografico, pergunta_id }: { id?: string; campo_demografico: ReportDemographicField; pergunta_id: string }) => {
+      if (!selectedSurveyId || !user) throw new Error("Selecione uma pesquisa para mesclar os dados.");
+      if (id) return reportMergeService.updateReportMerge(id, { campo_demografico, pergunta_id });
+      return reportMergeService.createReportMerge({ pesquisa_id: selectedSurveyId, campo_demografico, pergunta_id, criado_por: user.id });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: reportMergeQueryKey });
+      setReportMergeModalOpen(false);
+      setEditingReportMerge(null);
+    },
+  });
+
+  const reportMergeDeleteMutation = useMutation({
+    mutationFn: (id: string) => reportMergeService.deleteReportMerge(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: reportMergeQueryKey }),
+  });
+
+  const reportMergeCards = useMemo(
+    () => reportMerges.map(config => buildReportMergeCard(config, selectedSurvey, validSubmissions || [])),
+    [reportMerges, selectedSurvey, validSubmissions],
+  );
+
+  const handleOpenReportMerge = () => {
+    if (!isAdmin) return;
+    reportMergeMutation.reset();
+    setEditingReportMerge(null);
+    setReportMergeModalOpen(true);
+  };
+
+  const handleEditReportMerge = (config: ReportMergeConfig) => {
+    if (!isAdmin) return;
+    reportMergeMutation.reset();
+    setEditingReportMerge(config);
+    setReportMergeModalOpen(true);
+  };
+
+  const handleCloseReportMerge = () => {
+    if (reportMergeMutation.isPending) return;
+    setReportMergeModalOpen(false);
+    setEditingReportMerge(null);
+    reportMergeMutation.reset();
+  };
+
+  const handleConfirmReportMerge = (campo_demografico: ReportDemographicField, pergunta_id: string) => {
+    reportMergeMutation.mutate({ id: editingReportMerge?.id, campo_demografico, pergunta_id });
+  };
+
+  const handleDeleteReportMerge = (config: ReportMergeConfig) => {
+    const questionLabel = selectedSurvey?.schema_dinamico?.questions?.find(
+      (question: any) => question.id === config.pergunta_id,
+    )?.label || config.pergunta_id;
+    const title = `${DEMOGRAPHIC_FIELD_LABELS[config.campo_demografico]} - ${questionLabel}`;
+    if (!isAdmin || !window.confirm(`Excluir a mesclagem “${title}”?`)) return;
+    reportMergeDeleteMutation.reset();
+    reportMergeDeleteMutation.mutate(config.id);
+  };
+
+  const handleExportReportMerges = () => {
+    if (selectedSurvey && reportMergeCards.length > 0) generateReportMergesPDF(selectedSurvey, reportMergeCards);
+  };
 
   const handleOpenMerge = (questionId: string) => {
     if (!isAdmin || selectedSurvey?.schema_dinamico?.questions?.find((question: any) => question.id === questionId)?.type !== 'text') return;
@@ -289,6 +375,10 @@ export default function Reports() {
                   onChange={(e) => {
                     setMergeQuestionId(null);
                     mergeMutation.reset();
+                    reportMergeMutation.reset();
+                    reportMergeDeleteMutation.reset();
+                    setReportMergeModalOpen(false);
+                    setEditingReportMerge(null);
                     setSelectedSurveyId(e.target.value);
                   }}
                   className="pl-6 pr-12 py-4 bg-slate-50 dark:bg-slate-800 border-2 border-outline rounded-2xl focus:border-primary transition-all font-black text-sm appearance-none cursor-pointer"
@@ -340,69 +430,72 @@ export default function Reports() {
         </div>
       </div>
 
-      {selectedSurveyId && stats ? (
+      {selectedSurveyId ? (
         <div className="space-y-12">
-          {/* Perfil Demográfico */}
-          <section className="bg-white dark:bg-slate-900 p-12 rounded-[3.5rem] border border-outline shadow-sm space-y-12">
-             <div className="flex items-center gap-3">
-               <Users className="text-primary" size={28} />
-               <h3 className="text-2xl font-black text-on-surface tracking-tight">Perfil Demográfico</h3>
-             </div>
-             
-             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-y-16 gap-x-12">
-               {(Object.entries(stats.demographicData) as [string, any[]][]).map(([key, data]) => (
-                 <div key={key} className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    <div className="border-b-2 border-primary/10 pb-3">
-                      <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-primary">
-                        {key.replace('_', ' ')}
-                      </h4>
-                    </div>
+          {stats ? (
+            <section className="bg-white dark:bg-slate-900 p-12 rounded-[3.5rem] border border-outline shadow-sm space-y-12">
+              <div className="flex items-center gap-3">
+                <Users className="text-primary" size={28} />
+                <h3 className="text-2xl font-black text-on-surface tracking-tight">Perfil Demográfico</h3>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-y-16 gap-x-12">
+                {(Object.entries(stats.demographicData) as [string, any[]][]).map(([key, data]) => (
+                  <div key={key} className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className="border-b-2 border-primary/10 pb-3"><h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-primary">{key.replace('_', ' ')}</h4></div>
                     {renderChart(data)}
-                 </div>
-               ))}
-             </div>
-          </section>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : (
+            <div className="py-20 text-center bg-white dark:bg-slate-900 rounded-[3rem] border border-outline border-dashed">
+              <p className="text-on-surface-variant font-bold">Nenhum dado coletado para esta pesquisa ainda.</p>
+            </div>
+          )}
 
-          {/* Perguntas Dinâmicas */}
-          {Object.keys(stats.dynamicData).length > 0 && (
+          <ReportMergeList
+            cards={reportMergeCards}
+            isAdmin={isAdmin}
+            deleteError={reportMergeDeleteMutation.error instanceof Error ? reportMergeDeleteMutation.error.message : reportMergeDeleteMutation.error ? "Não foi possível excluir a mesclagem." : null}
+            onEdit={handleEditReportMerge}
+            onDelete={handleDeleteReportMerge}
+          />
+          <ReportMergeActions isAdmin={isAdmin} canExport={reportMergeCards.length > 0} onCreate={handleOpenReportMerge} onExport={handleExportReportMerges} />
+
+          {stats && Object.keys(stats.dynamicData).length > 0 && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
               {(Object.entries(stats.dynamicData) as [string, any[]][]).map(([key, data]) => {
                 const question = selectedSurvey?.schema_dinamico?.questions?.find((item: any) => item.id === key);
                 return (
-                <section key={key} className="bg-white dark:bg-slate-900 p-12 rounded-[3.5rem] border border-outline shadow-sm space-y-10 animate-in fade-in zoom-in-95 duration-500">
-                   <div className="flex items-start justify-between gap-4 border-b border-outline pb-6">
-                      <h3 className="text-xl font-black text-on-surface leading-tight">
-                        {question?.label || key}
-                      </h3>
+                  <section key={key} className="bg-white dark:bg-slate-900 p-12 rounded-[3.5rem] border border-outline shadow-sm space-y-10 animate-in fade-in zoom-in-95 duration-500">
+                    <div className="flex items-start justify-between gap-4 border-b border-outline pb-6">
+                      <h3 className="text-xl font-black text-on-surface leading-tight">{question?.label || key}</h3>
                       {isAdmin && question?.type === 'text' ? (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenMerge(key)}
-                          className="inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm font-black text-primary transition hover:bg-primary/10"
-                          title="Mesclar respostas textuais"
-                          aria-label={`Mesclar respostas de ${question?.label || key}`}
-                        >
-                          <GitMerge size={20} />
-                          Mesclar
+                        <button type="button" onClick={() => handleOpenMerge(key)} className="inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm font-black text-primary transition hover:bg-primary/10" title="Mesclar respostas textuais" aria-label={`Mesclar respostas de ${question?.label || key}`}>
+                          <GitMerge size={20} />Mesclar
                         </button>
                       ) : (
-                        <div className="w-12 h-12 bg-primary/5 rounded-2xl flex items-center justify-center shrink-0 text-primary border border-primary/10">
-                          <BarChartIcon size={24} />
-                        </div>
+                        <div className="w-12 h-12 bg-primary/5 rounded-2xl flex items-center justify-center shrink-0 text-primary border border-primary/10"><BarChartIcon size={24} /></div>
                       )}
-                   </div>
-                   {renderChart(data)}
-                </section>
+                    </div>
+                    {renderChart(data)}
+                  </section>
                 );
               })}
             </div>
           )}
         </div>
-      ) : selectedSurveyId && (
-        <div className="py-20 text-center bg-white dark:bg-slate-900 rounded-[3rem] border border-outline border-dashed">
-          <p className="text-on-surface-variant font-bold">Nenhum dado coletado para esta pesquisa ainda.</p>
-        </div>
-      )}
+      ) : null}
+
+      <ReportMergeModal
+        isOpen={isAdmin && reportMergeModalOpen}
+        questions={selectedSurvey?.schema_dinamico?.questions || []}
+        existingMerge={editingReportMerge}
+        isSubmitting={reportMergeMutation.isPending}
+        error={reportMergeMutation.error instanceof Error ? reportMergeMutation.error.message : reportMergeMutation.error ? "Não foi possível salvar a mesclagem." : null}
+        onClose={handleCloseReportMerge}
+        onConfirm={handleConfirmReportMerge}
+      />
 
       <ResponseMergeModal
         isOpen={isAdmin && Boolean(mergeQuestion)}

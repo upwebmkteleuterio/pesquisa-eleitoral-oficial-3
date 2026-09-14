@@ -89,3 +89,37 @@ export interface SubmissionEdits {
   dados_fixos?: Record<string, string>;
   respostas_dinamicas?: Record<string, any>;
 }
+
+export type ReportDemographicField = "sexo" | "faixa_etaria" | "renda" | "escolaridade" | "religiao" | "estado_civil";
+
+export interface ReportMergeConfig {
+  id: string;
+  pesquisa_id: string;
+  campo_demografico: ReportDemographicField;
+  pergunta_id: string;
+  criado_por?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReportMergeBreakdown {
+  label: string;
+  total: number;
+  percentage: number;
+}
+
+export interface ReportMergeAnswer {
+  label: string;
+  total: number;
+  percentage: number;
+  breakdown: ReportMergeBreakdown[];
+}
+
+export interface ReportMergeCardData {
+  config: ReportMergeConfig;
+  demographicLabel: string;
+  questionLabel: string;
+  totalResponses: number;
+  totalAnswers: number;
+  answers: ReportMergeAnswer[];
+}

@@ -281,12 +281,40 @@ export const submissionService = {
   },
 
   async getAudioPlaybackUrl(submission: Submission): Promise<string> {
-    if (!submission.audio?.storage_path) throw new Error('audio-unavailable');
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('not-authorized');
-    const { data: profile, error: profileError } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-    if (profileError || profile?.role !== 'admin') throw new Error('not-authorized');
-    const { data, error } = await supabase.storage.from(AUDIO_BUCKET).createSignedUrl(submission.audio.storage_path, 300);
+    const requestedPath = submission.audio?.storage_path;
+    if (!requestedPath) throw new Error('audio-unavailable');
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) throw new Error('not-authorized');
+
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+    if (profileError || !profile || !['admin', 'cliente'].includes(profile.role)) throw new Error('not-authorized');
+
+    let submissionQuery = supabase
+      .from('submissoes')
+      .select('pesquisa_id,audio_storage_path,valida')
+      .eq('id', submission.id);
+    if (profile.role === 'cliente') submissionQuery = submissionQuery.eq('valida', true);
+    const { data: record, error: submissionError } = await submissionQuery.maybeSingle();
+    if (submissionError) throw submissionError;
+    if (!record || record.audio_storage_path !== requestedPath || !record.audio_storage_path) throw new Error('audio-unavailable');
+
+    if (profile.role === 'cliente') {
+      if (record.valida !== true) throw new Error('not-authorized');
+      const { data: link, error: linkError } = await supabase
+        .from('pesquisa_clientes')
+        .select('pesquisa_id')
+        .eq('pesquisa_id', record.pesquisa_id)
+        .eq('cliente_id', user.id)
+        .maybeSingle();
+      if (linkError || !link) throw new Error('not-authorized');
+    }
+
+    const { data, error } = await supabase.storage.from(AUDIO_BUCKET).createSignedUrl(record.audio_storage_path, 300);
     if (error || !data?.signedUrl) throw error || new Error('audio-unavailable');
     return data.signedUrl;
   },

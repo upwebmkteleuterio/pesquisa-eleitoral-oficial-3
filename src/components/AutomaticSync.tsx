@@ -1,37 +1,55 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "../contexts/AuthContext";
+import { audioReconciliationService } from "../services/audioReconciliationService";
 import { submissionService } from "../services/submissionService";
 
 export default function AutomaticSync() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
   useEffect(() => {
-    let disposed = false;
+    if (!user?.id) return;
 
-    const synchronize = async () => {
-      try {
-        await submissionService.syncAll();
-      } catch (error) {
-        console.error("[AutomaticSync] Failed to sync pending submissions", error);
-      } finally {
+    let disposed = false;
+    let activeRun: Promise<void> | null = null;
+
+    const synchronize = () => {
+      if (disposed || !navigator.onLine || activeRun) return;
+
+      const run = (async () => {
+        try {
+          await submissionService.syncAll();
+        } catch {
+          // Background failures must not interrupt the reconciliation attempt.
+        }
+
+        if (disposed || !navigator.onLine) return;
+
+        try {
+          await audioReconciliationService.reconcile(user.id);
+        } catch {
+          return;
+        }
+
         if (!disposed) {
           void queryClient.invalidateQueries({ queryKey: ["submissions"] });
         }
-      }
+      })();
+
+      activeRun = run.finally(() => {
+        activeRun = null;
+      });
     };
 
-    const handleOnline = () => {
-      void synchronize();
-    };
-
-    void synchronize();
-    window.addEventListener("online", handleOnline);
+    synchronize();
+    window.addEventListener("online", synchronize);
 
     return () => {
       disposed = true;
-      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("online", synchronize);
     };
-  }, [queryClient]);
+  }, [queryClient, user?.id]);
 
   return null;
 }

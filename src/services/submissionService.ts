@@ -10,6 +10,7 @@ const FIXED_FIELDS = ["sexo", "faixa_etaria", "escolaridade", "renda", "religiao
 
 type SubmissionRecord = Record<string, any>;
 type SyncResult = { successCount: number; failureCount: number; totalCount: number };
+export type LocalAudioSubmission = { key: string; submission: Submission };
 
 const RETRY_DELAYS_MS = [1000, 3000];
 let activeSync: Promise<SyncResult> | null = null;
@@ -110,6 +111,45 @@ export const submissionService = {
   async getAll(userId?: string): Promise<Submission[]> {
     const cached = await localforage.getItem<Submission[]>(scopedSubmissionsKey(userId));
     return (cached || []).map(submission => ({ ...submission, valida: submission.valida ?? true }));
+  },
+
+  async getLocalAudioSubmissions(userId: string): Promise<LocalAudioSubmission[]> {
+    const keys = Array.from(new Set([SUBMISSIONS_KEY, scopedSubmissionsKey(userId)]));
+    const records: LocalAudioSubmission[] = [];
+
+    for (const key of keys) {
+      const cached = await localforage.getItem<Submission[]>(key);
+      for (const submission of cached || []) {
+        if (submission.pesquisador_id === userId && submission.audio?.blob instanceof Blob) {
+          records.push({ key, submission });
+        }
+      }
+    }
+
+    return records;
+  },
+
+  async markAudioUploaded(userId: string, submissionId: string, storagePath: string): Promise<void> {
+    const keys = Array.from(new Set([SUBMISSIONS_KEY, scopedSubmissionsKey(userId)]));
+
+    for (const key of keys) {
+      const cached = await localforage.getItem<Submission[]>(key);
+      if (!cached) continue;
+
+      const updated = cached.map(submission => {
+        if (submission.id !== submissionId || submission.pesquisador_id !== userId || !submission.audio?.blob) {
+          return submission;
+        }
+
+        return {
+          ...submission,
+          status_sincronizacao: true,
+          audio: { ...submission.audio, blob: undefined, storage_path: storagePath }
+        };
+      });
+
+      await localforage.setItem(key, updated);
+    }
   },
 
   async getLocalSuggestions(questionId: string): Promise<string[]> {

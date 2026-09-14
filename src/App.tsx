@@ -134,10 +134,10 @@ function AppRoutes() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AutomaticSync />
       <ThemeProvider>
         <InstallPwaProvider>
           <AuthProvider>
+            <AutomaticSync />
             <BrowserRouter>
               <AppRoutes />
             </BrowserRouter>

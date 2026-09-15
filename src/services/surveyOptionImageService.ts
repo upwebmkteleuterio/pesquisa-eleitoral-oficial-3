@@ -74,7 +74,6 @@ export const surveyOptionImageService = {
     surveyId: string,
     questionId: string,
     alternative: string,
-    optionIndex: number,
     file: File,
   ): Promise<SurveyOptionImage> {
     const allowedMimeTypes = ["image/jpeg", "image/png", "image/webp"];
@@ -85,10 +84,10 @@ export const surveyOptionImageService = {
       throw new Error("A imagem deve ter no máximo 5 MB.");
     }
 
-    const storagePath = `${safePathPart(surveyId)}/${safePathPart(questionId)}/option-${optionIndex}.${extensionForMimeType(file.type)}`;
+    const storagePath = `${safePathPart(surveyId)}/${safePathPart(questionId)}/${crypto.randomUUID()}.${extensionForMimeType(file.type)}`;
     const { error: uploadError } = await supabase.storage
       .from(IMAGE_BUCKET)
-      .upload(storagePath, file, { upsert: true, contentType: file.type });
+      .upload(storagePath, file, { upsert: false, contentType: file.type });
     if (uploadError) throw uploadError;
 
     const { data, error } = await supabase
@@ -109,6 +108,42 @@ export const surveyOptionImageService = {
     await localforage.setItem(metadataKey(surveyId), [...nextMetadata, image]);
     await localforage.setItem(bytesKey(storagePath), file);
     return image;
+  },
+
+  async remove(image: SurveyOptionImage): Promise<void> {
+    const { data: deletedMetadata, error: metadataError } = await supabase
+      .from("pesquisa_alternativa_imagens")
+      .delete()
+      .eq("id", image.id)
+      .eq("pesquisa_id", image.pesquisa_id)
+      .select("id")
+      .maybeSingle();
+    if (metadataError) throw metadataError;
+    if (!deletedMetadata) throw new Error("A imagem selecionada não foi encontrada.");
+
+    const { count: remainingReferences, error: referencesError } = await supabase
+      .from("pesquisa_alternativa_imagens")
+      .select("id", { count: "exact", head: true })
+      .eq("storage_path", image.storage_path)
+      .neq("id", image.id);
+    if (referencesError) throw referencesError;
+    if (remainingReferences === null) throw new Error("Não foi possível verificar as referências da imagem.");
+
+    if (remainingReferences === 0) {
+      const { error: storageError } = await supabase.storage
+        .from(IMAGE_BUCKET)
+        .remove([image.storage_path]);
+      if (storageError) throw storageError;
+    }
+
+    const metadata = await localforage.getItem<SurveyOptionImage[]>(metadataKey(image.pesquisa_id)) || [];
+    await localforage.setItem(
+      metadataKey(image.pesquisa_id),
+      metadata.filter(item => item.id !== image.id),
+    );
+    if (remainingReferences === 0) {
+      await localforage.removeItem(bytesKey(image.storage_path));
+    }
   },
 };
 

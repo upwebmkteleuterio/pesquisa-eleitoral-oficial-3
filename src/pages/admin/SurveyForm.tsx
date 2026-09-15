@@ -637,7 +637,6 @@ export default function SurveyForm() {
                                            surveyId={id}
                                            questionId={q.id}
                                            alternative={opt}
-                                           optionIndex={optIndex}
                                            image={optionImages.find(image => image.pergunta_id === q.id && image.alternativa === opt)}
                                          />
                                        </div>

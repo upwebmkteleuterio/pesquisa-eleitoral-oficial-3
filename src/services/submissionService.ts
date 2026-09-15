@@ -14,7 +14,38 @@ export type LocalAudioSubmission = { key: string; submission: Submission };
 
 const RETRY_DELAYS_MS = [1000, 3000];
 const SYNC_TIMEOUT_MS = 15_000;
+const ADMIN_PAGE_SIZE = 50;
+const CLIENT_COLUMNS = 'id,pesquisa_id,pesquisador_id,nome_entrevistado,telefone,bairro,sexo,faixa_etaria,escolaridade,renda,religiao,respostas_dinamicas,geolocalizacao,data_coleta,created_at,estado_civil,origem,referenciado_por,audio_storage_path,audio_mime_type,audio_duration_seconds,audio_consent_at,audio_consent_state';
 let activeSync: Promise<SyncResult> | null = null;
+
+export interface SubmissionPage {
+  data: Submission[];
+  total: number;
+}
+
+export interface HistoryPageParams {
+  startIso: string;
+  endIso: string;
+  searchTerm?: string;
+  page: number;
+}
+
+export interface HistoryPage extends SubmissionPage {}
+
+const safeResearcherId = (value?: string): string | null | undefined => {
+  if (!value || value === 'todos') return null;
+  const trimmed = value.trim();
+  return /^[a-zA-Z0-9_-]+$/.test(trimmed) ? trimmed : undefined;
+};
+
+const safeSearchTerm = (value?: string): string => (value || '')
+  .trim()
+  .slice(0, 100)
+  .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const validDateInput = (value: string): boolean => /^[0-9T:.+Z-]+$/.test(value) && !Number.isNaN(Date.parse(value));
 
 const reportProgress = (onProgress: SubmissionProgressCallback | undefined, progress: SubmissionProgress) => {
   try {
@@ -497,12 +528,100 @@ export const submissionService = {
     });
   },
 
-  async getBySurveyId(surveyId: string, onlyValid = false, userId?: string, clientRead = false): Promise<Submission[]> {
+  async getBySurveyIdPaged(
+    surveyId: string,
+    page: number,
+    onlyValid = false,
+    userId?: string,
+    clientRead = false,
+    researcherId?: string,
+  ): Promise<SubmissionPage> {
+    const safePage = Number.isInteger(page) && page > 0 ? page : 1;
+    const safeMemberId = safeResearcherId(researcherId);
+    if (safeMemberId === undefined) return { data: [], total: 0 };
+
     if (navigator.onLine) {
-      const clientColumns = 'id,pesquisa_id,pesquisador_id,nome_entrevistado,telefone,bairro,sexo,faixa_etaria,escolaridade,renda,religiao,respostas_dinamicas,geolocalizacao,data_coleta,created_at,estado_civil,origem,referenciado_por,audio_storage_path,audio_mime_type,audio_duration_seconds,audio_consent_at,audio_consent_state';
       let query = supabase
         .from('submissoes')
-        .select(clientRead ? clientColumns : '*')
+        .select(clientRead ? CLIENT_COLUMNS : '*', { count: 'exact' })
+        .eq('pesquisa_id', surveyId);
+      if (onlyValid) query = query.eq('valida', true);
+      if (safeMemberId) query = query.or(`pesquisador_id.eq.${safeMemberId},referenciado_por.eq.${safeMemberId}`);
+
+      const { data, count, error } = await query
+        .order('data_coleta', { ascending: false })
+        .order('id', { ascending: false })
+        .range((safePage - 1) * ADMIN_PAGE_SIZE, safePage * ADMIN_PAGE_SIZE - 1);
+      if (!error && data) return { data: data.map(mapSubmission), total: count || 0 };
+    }
+
+    const local = await this.getBySurveyId(surveyId, onlyValid, userId, clientRead);
+    const filtered = safeMemberId
+      ? local.filter(submission => submission.pesquisador_id === safeMemberId || submission.referenciado_por === safeMemberId)
+      : local;
+    const sorted = [...filtered].sort((a, b) => new Date(b.data_coleta).getTime() - new Date(a.data_coleta).getTime());
+    const start = (safePage - 1) * ADMIN_PAGE_SIZE;
+    return { data: sorted.slice(start, start + ADMIN_PAGE_SIZE), total: sorted.length };
+  },
+
+  async getBySurveyIdCount(
+    surveyId: string,
+    onlyValid = false,
+    userId?: string,
+    clientRead = false,
+    researcherId?: string,
+  ): Promise<number> {
+    const safeMemberId = safeResearcherId(researcherId);
+    if (safeMemberId === undefined) return 0;
+
+    if (navigator.onLine) {
+      let query = supabase
+        .from('submissoes')
+        .select('id', { count: 'exact', head: true })
+        .eq('pesquisa_id', surveyId);
+      if (onlyValid) query = query.eq('valida', true);
+      if (safeMemberId) query = query.or(`pesquisador_id.eq.${safeMemberId},referenciado_por.eq.${safeMemberId}`);
+      const { count, error } = await query;
+      if (!error) return count || 0;
+    }
+
+    return (await this.getBySurveyIdPaged(surveyId, 1, onlyValid, userId, clientRead, researcherId)).total;
+  },
+
+  async getBySurveyIdFiltered(
+    surveyId: string,
+    onlyValid = false,
+    userId?: string,
+    clientRead = false,
+    researcherId?: string,
+  ): Promise<Submission[]> {
+    const safeMemberId = safeResearcherId(researcherId);
+    if (safeMemberId === undefined) return [];
+
+    if (navigator.onLine) {
+      let query = supabase
+        .from('submissoes')
+        .select(clientRead ? CLIENT_COLUMNS : '*')
+        .eq('pesquisa_id', surveyId);
+      if (onlyValid) query = query.eq('valida', true);
+      if (safeMemberId) query = query.or(`pesquisador_id.eq.${safeMemberId},referenciado_por.eq.${safeMemberId}`);
+      const { data, error } = await query
+        .order('data_coleta', { ascending: false })
+        .order('id', { ascending: false });
+      if (!error && data) return data.map(mapSubmission);
+    }
+
+    const local = await this.getBySurveyId(surveyId, onlyValid, userId, clientRead);
+    return [...local]
+      .filter(submission => !safeMemberId || submission.pesquisador_id === safeMemberId || submission.referenciado_por === safeMemberId)
+      .sort((a, b) => new Date(b.data_coleta).getTime() - new Date(a.data_coleta).getTime());
+  },
+
+  async getBySurveyId(surveyId: string, onlyValid = false, userId?: string, clientRead = false): Promise<Submission[]> {
+    if (navigator.onLine) {
+      let query = supabase
+        .from('submissoes')
+        .select(clientRead ? CLIENT_COLUMNS : '*')
         .eq('pesquisa_id', surveyId);
 
       if (onlyValid) query = query.eq('valida', true);
@@ -521,6 +640,41 @@ export const submissionService = {
 
     const local = await this.getAll(userId);
     return local.filter(s => s.formulario_id === surveyId && (!onlyValid || s.valida !== false));
+  },
+
+  async getHistoryPage(params: HistoryPageParams): Promise<HistoryPage> {
+    const safePage = Number.isInteger(params.page) && params.page > 0 ? params.page : 1;
+    const startIso = validDateInput(params.startIso) ? params.startIso : new Date(0).toISOString();
+    const endIso = validDateInput(params.endIso) ? params.endIso : new Date().toISOString();
+    const search = safeSearchTerm(params.searchTerm);
+
+    if (navigator.onLine) {
+      let query = supabase
+        .from('submissoes')
+        .select('*', { count: 'exact' })
+        .gte('data_coleta', startIso)
+        .lte('data_coleta', endIso);
+      if (search) query = query.or(`nome_entrevistado.ilike.%${search}%,bairro.ilike.%${search}%`);
+      const { data, count, error } = await query
+        .order('data_coleta', { ascending: false })
+        .order('id', { ascending: false })
+        .range((safePage - 1) * ADMIN_PAGE_SIZE, safePage * ADMIN_PAGE_SIZE - 1);
+      if (!error && data) return { data: data.map(mapSubmission), total: count || 0 };
+    }
+
+    const local = await this.getAll();
+    const filtered = local
+      .filter(submission => {
+        const date = new Date(submission.data_coleta);
+        const normalizedSearch = search.toLocaleLowerCase();
+        return date >= new Date(startIso) && date <= new Date(endIso)
+          && (!normalizedSearch
+            || submission.nome_entrevistado?.toLocaleLowerCase().includes(normalizedSearch)
+            || submission.bairro?.toLocaleLowerCase().includes(normalizedSearch));
+      })
+      .sort((a, b) => new Date(b.data_coleta).getTime() - new Date(a.data_coleta).getTime());
+    const start = (safePage - 1) * ADMIN_PAGE_SIZE;
+    return { data: filtered.slice(start, start + ADMIN_PAGE_SIZE), total: filtered.length };
   },
 
   async getHistoryByDate(dateStr: string): Promise<Submission[]> {

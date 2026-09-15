@@ -9,7 +9,9 @@ import { ExportModal } from "../../components/admin/ExportModal";
 import { ResponsePdfModal } from "../../components/admin/ResponsePdfModal";
 import { SubmissionEditModal } from "../../components/admin/SubmissionEditModal";
 import { AudioPlaybackModal } from "../../components/admin/AudioPlaybackModal";
+import Pagination from "../../components/Pagination";
 import { Submission, SubmissionEdits } from "../../types";
+import type { SubmissionPage } from "../../services/submissionService";
 import { FileSpreadsheet, FileDown, ChevronDown, Filter, Database, Calendar, Clock, User, Globe, Smartphone, UserPlus, Lightbulb, PlayCircle } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { format } from "date-fns";
@@ -21,14 +23,16 @@ export default function SubmissionsList() {
   const canPlayAudio = profile?.role === 'admin' || isClient;
   const [selectedSurveyId, setSelectedSurveyId] = useState<string>("");
   const [selectedResearcherId, setSelectedResearcherId] = useState<string>("todos");
+  const [page, setPage] = useState(1);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isResponsePdfModalOpen, setIsResponsePdfModalOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null);
   const [audioSubmission, setAudioSubmission] = useState<Submission | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const queryClient = useQueryClient();
-  const submissionQueryKey = ['submissions', 'list', user?.id || 'anonymous', selectedSurveyId];
+  const submissionQueryKey = ['submissions', 'list', user?.id || 'anonymous', selectedSurveyId, selectedResearcherId, page];
   const { data: surveys } = useQuery({
     queryKey: ['admin_surveys', user?.id || 'anonymous', profile?.role || 'unknown'],
     queryFn: () => surveyService.getAllForUser(user?.id, profile?.role),
@@ -36,10 +40,23 @@ export default function SubmissionsList() {
   });
   const { data: allUsers } = useQuery({ queryKey: ['all_users', user?.id || 'anonymous'], queryFn: () => userService.getAllUsers(), enabled: !isClient && !!user });
   const { data: demographicOptions } = useQuery({ queryKey: ['demographic_options_list'], queryFn: () => surveyService.getDemographicOptions() });
-  const { data: submissions, isLoading } = useQuery({
+  const { data: submissionsPage, isLoading } = useQuery<SubmissionPage>({
     queryKey: submissionQueryKey,
-    queryFn: () => submissionService.getBySurveyId(selectedSurveyId, isClient, isClient ? user?.id : undefined, isClient),
+    queryFn: () => submissionService.getBySurveyIdPaged(selectedSurveyId, page, isClient, isClient ? user?.id : undefined, isClient, selectedResearcherId),
     enabled: !!selectedSurveyId && (!isClient || surveys?.some(survey => survey.id === selectedSurveyId)),
+  });
+  const submissions = submissionsPage?.data;
+  const totalSubmissions = submissionsPage?.total || 0;
+  const totalPages = Math.max(1, Math.ceil(totalSubmissions / 50));
+  const { data: validSubmissionCount = 0 } = useQuery({
+    queryKey: ['submissions', 'count', user?.id || 'anonymous', selectedSurveyId, selectedResearcherId, 'valid'],
+    queryFn: () => submissionService.getBySurveyIdCount(selectedSurveyId, true, isClient ? user?.id : undefined, isClient, selectedResearcherId),
+    enabled: !!selectedSurveyId && (!isClient || surveys?.some(survey => survey.id === selectedSurveyId)),
+  });
+  const { data: completeSubmissions = [] } = useQuery({
+    queryKey: ['submissions', 'export', user?.id || 'anonymous', selectedSurveyId, selectedResearcherId],
+    queryFn: () => submissionService.getBySurveyIdFiltered(selectedSurveyId, isClient, isClient ? user?.id : undefined, isClient, selectedResearcherId),
+    enabled: isResponsePdfModalOpen && !!selectedSurveyId,
   });
 
   useEffect(() => {
@@ -47,10 +64,14 @@ export default function SubmissionsList() {
     setSelectedSurveyId(currentId => surveys.some(survey => survey.id === currentId) ? currentId : surveys[0]?.id || "");
   }, [isClient, surveys]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [selectedSurveyId, selectedResearcherId]);
+
   const validationMutation = useMutation({
     mutationFn: ({ id, valida }: { id: string; valida: boolean }) => submissionService.updateValidation(id, valida),
     onSuccess: (updated) => {
-      queryClient.setQueryData<Submission[]>(submissionQueryKey, current => current?.map(submission => submission.id === updated.id ? updated : submission));
+      queryClient.setQueryData<SubmissionPage>(submissionQueryKey, current => current ? { ...current, data: current.data.map(submission => submission.id === updated.id ? updated : submission) } : current);
       queryClient.invalidateQueries({ queryKey: ['submissions'] });
       setValidationError(null);
     },
@@ -60,7 +81,7 @@ export default function SubmissionsList() {
   const editMutation = useMutation({
     mutationFn: ({ id, edits }: { id: string; edits: SubmissionEdits }) => submissionService.updateById(id, edits),
     onSuccess: (updated) => {
-      queryClient.setQueryData<Submission[]>(submissionQueryKey, current => current?.map(submission => submission.id === updated.id ? updated : submission));
+      queryClient.setQueryData<SubmissionPage>(submissionQueryKey, current => current ? { ...current, data: current.data.map(submission => submission.id === updated.id ? updated : submission) } : current);
       queryClient.invalidateQueries({ queryKey: ['submissions'] });
       setSelectedSubmission(null);
     }
@@ -69,7 +90,7 @@ export default function SubmissionsList() {
   const deleteMutation = useMutation({
     mutationFn: (submission: Submission) => submissionService.deleteById(submission.id, submission.audio?.storage_path),
     onSuccess: (_, deletedSubmission) => {
-      queryClient.setQueryData<Submission[]>(submissionQueryKey, current => current?.filter(submission => submission.id !== deletedSubmission.id));
+      queryClient.setQueryData<SubmissionPage>(submissionQueryKey, current => current ? { ...current, data: current.data.filter(submission => submission.id !== deletedSubmission.id), total: Math.max(0, current.total - 1) } : current);
       queryClient.invalidateQueries({ queryKey: ['submissions'] });
       setSelectedSubmission(null);
     }
@@ -77,30 +98,32 @@ export default function SubmissionsList() {
 
   const selectedSurvey = useMemo(() => surveys?.find(s => s.id === selectedSurveyId), [surveys, selectedSurveyId]);
   const dynamicColumns = useMemo(() => selectedSurvey?.schema_dinamico?.questions || [], [selectedSurvey]);
-  const filteredSubmissions = useMemo(() => {
-    if (!submissions) return [];
-    const researcherFiltered = selectedResearcherId === "todos" ? submissions : submissions.filter(submission => submission.pesquisador_id === selectedResearcherId || submission.referenciado_por === selectedResearcherId);
-    return [...researcherFiltered].sort((a, b) => new Date(b.data_coleta).getTime() - new Date(a.data_coleta).getTime());
-  }, [submissions, selectedResearcherId]);
-
-  const handleExport = (formatType: 'xlsx' | 'csv') => {
-    if (!selectedSurvey || !filteredSubmissions.length) return;
-    exportSubmissions(filteredSubmissions, selectedSurvey.nome, allUsers || [], demographicOptions || [], dynamicColumns, formatType);
-    setIsExportModalOpen(false);
-  };
-
-  const validSubmissionCount = submissions?.filter(submission => submission.valida !== false).length || 0;
+  const filteredSubmissions = submissions || [];
   const validCountsByMember = useMemo(() => {
     const counts: Record<string, number> = {};
-    submissions?.filter(submission => submission.valida !== false).forEach(submission => {
+    completeSubmissions.filter(submission => submission.valida !== false).forEach(submission => {
       const memberId = (submission.origem === "web" ? submission.referenciado_por : submission.pesquisador_id) || "sistema";
       counts[memberId] = (counts[memberId] || 0) + 1;
     });
     return counts;
-  }, [submissions]);
+  }, [completeSubmissions]);
+
+  const handleExport = async (formatType: 'xlsx' | 'csv') => {
+    if (!selectedSurvey) return;
+    setIsExporting(true);
+    try {
+      const complete = await submissionService.getBySurveyIdFiltered(selectedSurveyId, isClient, isClient ? user?.id : undefined, isClient, selectedResearcherId);
+      if (!complete.length) return;
+      exportSubmissions(complete, selectedSurvey.nome, allUsers || [], demographicOptions || [], dynamicColumns, formatType);
+      setIsExportModalOpen(false);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const handleGenerateResponsesPDF = (memberId: string) => {
-    if (!selectedSurvey || !submissions?.length || validSubmissionCount === 0 || (memberId !== "todos" && !validCountsByMember[memberId])) return;
-    generateResponsesPDF(selectedSurvey, submissions, allUsers || [], memberId, demographicOptions || []);
+    if (!selectedSurvey || !completeSubmissions.length || validSubmissionCount === 0 || (memberId !== "todos" && !validCountsByMember[memberId])) return;
+    generateResponsesPDF(selectedSurvey, completeSubmissions, allUsers || [], memberId, demographicOptions || []);
     setIsResponsePdfModalOpen(false);
   };
 
@@ -140,8 +163,8 @@ export default function SubmissionsList() {
         {!selectedSurveyId ? <div className="flex flex-col items-center justify-center space-y-4 px-10 py-32 text-center"><div className="flex h-20 w-20 items-center justify-center rounded-full bg-slate-50 text-slate-300 dark:bg-slate-800"><Database size={40} /></div><div className="mx-auto max-w-xs"><p className="text-lg font-bold text-on-surface">Nenhum formulário selecionado</p><p className="mt-1 text-sm font-medium text-on-surface-variant">Escolha uma pesquisa no menu acima para carregar os registros.</p></div></div> : isLoading ? <div className="py-32 text-center"><div className="mb-4 inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" /><p className="text-xs font-black uppercase tracking-widest text-primary">Carregando dados...</p></div> : (
           <div className="flex h-full flex-col">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-outline bg-slate-50/50 px-6 py-4 dark:bg-slate-800/30">
-              <div className="flex items-center gap-3"><span className="rounded-lg border border-outline bg-white px-3 py-1 text-[10px] font-black uppercase text-on-surface-variant shadow-sm dark:bg-slate-900">{filteredSubmissions.length} Registros</span></div>
-              <div className="flex flex-wrap items-center gap-3"><div className="relative"><select value={selectedResearcherId} onChange={event => setSelectedResearcherId(event.target.value)} className="appearance-none rounded-xl border border-outline bg-white py-2 pl-9 pr-8 text-[11px] font-bold outline-none focus:ring-2 focus:ring-primary/20 dark:bg-slate-900"><option value="todos">Todos os Membros</option>{allUsers?.map(user => <option key={user.id} value={user.id}>{user.nome} {user.role === 'admin' ? '(Adm)' : ''}</option>)}</select><User className="absolute left-3 top-1/2 -translate-y-1/2 text-primary" size={14} /><ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant" size={14} /></div><button onClick={() => setIsExportModalOpen(true)} disabled={!filteredSubmissions.length} className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white shadow-sm transition-all hover:brightness-110 active:scale-95 disabled:opacity-50"><FileSpreadsheet size={16} />Exportar</button><button type="button" onClick={() => setIsResponsePdfModalOpen(true)} disabled={!validSubmissionCount} className="inline-flex items-center justify-center gap-3 rounded-2xl bg-primary px-4 py-2 text-xs font-black text-white shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none disabled:hover:scale-100" title="Gerar respostas em PDF"><FileDown size={16} />Gerar PDF</button></div>
+              <div className="flex items-center gap-3"><span className="rounded-lg border border-outline bg-white px-3 py-1 text-[10px] font-black uppercase text-on-surface-variant shadow-sm dark:bg-slate-900">{totalSubmissions} Registros</span></div>
+              <div className="flex flex-wrap items-center gap-3"><div className="relative"><select value={selectedResearcherId} onChange={event => setSelectedResearcherId(event.target.value)} className="appearance-none rounded-xl border border-outline bg-white py-2 pl-9 pr-8 text-[11px] font-bold outline-none focus:ring-2 focus:ring-primary/20 dark:bg-slate-900"><option value="todos">Todos os Membros</option>{allUsers?.map(user => <option key={user.id} value={user.id}>{user.nome} {user.role === 'admin' ? '(Adm)' : ''}</option>)}</select><User className="absolute left-3 top-1/2 -translate-y-1/2 text-primary" size={14} /><ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant" size={14} /></div><button onClick={() => setIsExportModalOpen(true)} disabled={!totalSubmissions || isExporting} className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white shadow-sm transition-all hover:brightness-110 active:scale-95 disabled:opacity-50"><FileSpreadsheet size={16} />Exportar</button><button type="button" onClick={() => setIsResponsePdfModalOpen(true)} disabled={!validSubmissionCount} className="inline-flex items-center justify-center gap-3 rounded-2xl bg-primary px-4 py-2 text-xs font-black text-white shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none disabled:hover:scale-100" title="Gerar respostas em PDF"><FileDown size={16} />Gerar PDF</button></div>
             </div>
             {!isClient && <div className="flex items-start gap-3 border-b border-primary/10 bg-primary/5 px-6 py-3 text-sm font-bold text-primary"><Lightbulb size={18} className="mt-0.5 shrink-0" /><p>Clique em uma linha para editar os dados da resposta.</p></div>}
 
@@ -169,12 +192,13 @@ export default function SubmissionsList() {
                 </tbody>
               </table>
             </div>
+            <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
             {validationError && <p role="alert" className="border-t border-rose-100 bg-rose-50 px-6 py-3 text-sm font-bold text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">{validationError}</p>}
           </div>
         )}
       </div>
 
-      <ExportModal isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)} onExport={handleExport} />
+      <ExportModal isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)} onExport={handleExport} isLoading={isExporting} />
       <ResponsePdfModal isOpen={isResponsePdfModalOpen} members={allUsers || []} validCount={validSubmissionCount} validCountsByMember={validCountsByMember} onClose={() => setIsResponsePdfModalOpen(false)} onGenerate={handleGenerateResponsesPDF} />
       <SubmissionEditModal isOpen={!!selectedSubmission} submission={selectedSubmission} survey={selectedSurvey} demographicOptions={demographicOptions} isSaving={editMutation.isPending || deleteMutation.isPending} isDeleting={deleteMutation.isPending} error={deleteMutation.error ? "Não foi possível excluir a resposta." : editMutation.error instanceof Error ? editMutation.error.message : editMutation.error ? "Não foi possível salvar a alteração." : null} onClose={() => { if (!editMutation.isPending && !deleteMutation.isPending) { setSelectedSubmission(null); editMutation.reset(); deleteMutation.reset(); } }} onSave={edits => { if (selectedSubmission) { deleteMutation.reset(); editMutation.mutate({ id: selectedSubmission.id, edits }); } }} onDelete={handleDelete} />
       <AudioPlaybackModal submission={audioSubmission} onClose={() => setAudioSubmission(null)} />

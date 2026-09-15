@@ -6,6 +6,10 @@ import { surveyService } from "../../services/surveyService";
 import { submissionService } from "../../services/submissionService";
 import { responseMergeService } from "../../services/responseMergeService";
 import { reportMergeService } from "../../services/reportMergeService";
+import { surveyOptionImageService } from "../../services/surveyOptionImageService";
+import { SurveyOptionImage } from "../../components/SurveyOptionImage";
+import { isCandidateQuestion } from "../../utils/responseNormalization";
+import type { SurveyOptionImage as SurveyOptionImageMetadata } from "../../types";
 import { useAuth } from "../../contexts/AuthContext";
 import { ResponseMergeModal, type ResponseMergeOption } from "../../components/admin/ResponseMergeModal";
 import { ReportMergeActions } from "../../components/admin/ReportMergeActions";
@@ -37,6 +41,13 @@ import { aggregateQuestionResponses } from "../../utils/responseNormalization";
 import { buildReportMergeCard, DEMOGRAPHIC_FIELD_LABELS } from "../../utils/reportMergeUtils";
 
 const COLORS = ['#10b981', '#3b82f6', '#f43f5e', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#475569'];
+
+const normalizeImageLabel = (value: string): string => value
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLocaleLowerCase('pt-BR')
+  .replace(/\s+/g, ' ')
+  .trim();
 
 const LABELS_MAP: Record<string, Record<string, string>> = {
   sexo: { masculino: 'Masculino', feminino: 'Feminino', outro: 'Outro' },
@@ -105,6 +116,11 @@ export default function Reports() {
     queryKey: ['submissions', user?.id || 'anonymous', selectedSurveyId, 'valid'],
     queryFn: () => submissionService.getBySurveyId(selectedSurveyId, true, profile?.role === 'cliente' ? user?.id : undefined, isClient),
     enabled: !!selectedSurveyId && (!isClient || surveys?.some(survey => survey.id === selectedSurveyId)),
+  });
+  const { data: surveyOptionImages = [] } = useQuery<SurveyOptionImageMetadata[]>({
+    queryKey: ['survey-option-images', selectedSurveyId],
+    queryFn: () => surveyOptionImageService.getForSurvey(selectedSurveyId),
+    enabled: !!selectedSurveyId,
   });
 
   const reportMergeQueryKey = ['report-merges', user?.id || 'anonymous', selectedSurveyId];
@@ -262,16 +278,23 @@ export default function Reports() {
     return { total: validSubmissions.length, demographicData, dynamicData };
   }, [validSubmissions, selectedSurvey]);
 
-  const renderChart = (data: any[]) => {
+  const renderChart = (data: any[], question?: { id: string; label?: string }) => {
+    const isCandidateChart = !!question && isCandidateQuestion(question.label);
     if (chartType === 'horizontal') {
       return (
         <div className="space-y-4">
           {[...data].sort((a, b) => b.value - a.value).map((item, idx) => {
             const percent = (item.value / (stats?.total || 1)) * 100;
+            const image = isCandidateChart
+              ? surveyOptionImages.find(option => option.pergunta_id === question?.id && normalizeImageLabel(option.alternativa) === normalizeImageLabel(item.name))
+              : undefined;
             return (
-              <div key={idx} className="bg-slate-50 dark:bg-slate-800/40 p-5 rounded-[1.5rem] space-y-3 border border-transparent hover:border-primary/20">
+              <div key={idx} className="space-y-3 rounded-[1.5rem] border border-transparent bg-slate-50 p-5 hover:border-primary/20 dark:bg-slate-800/40">
                 <div className="flex items-center justify-between text-xs font-black">
-                  <span className="text-on-surface-variant truncate max-w-[200px]">{item.name}</span>
+                  <span className="flex min-w-0 items-center gap-3 text-on-surface-variant">
+                    {image && <SurveyOptionImage image={image} alt={`Imagem de ${item.name}`} className="h-10 w-10 shrink-0 rounded-xl border border-outline object-cover" />}
+                    <span className="max-w-[200px] truncate">{item.name}</span>
+                  </span>
                   <span className="text-white px-2.5 py-0.5 rounded-lg" style={{ backgroundColor: COLORS[idx % COLORS.length] }}>{percent.toFixed(1)}%</span>
                 </div>
                 <div className="h-2.5 bg-slate-200 dark:bg-slate-900 rounded-full overflow-hidden border border-outline">
@@ -478,7 +501,7 @@ export default function Reports() {
                         <div className="w-12 h-12 bg-primary/5 rounded-2xl flex items-center justify-center shrink-0 text-primary border border-primary/10"><BarChartIcon size={24} /></div>
                       )}
                     </div>
-                    {renderChart(data)}
+                    {renderChart(data, question)}
                   </section>
                 );
               })}

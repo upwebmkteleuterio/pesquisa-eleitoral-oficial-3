@@ -2,15 +2,17 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { surveyService } from "../../services/surveyService";
+import { surveyOptionImageService } from "../../services/surveyOptionImageService";
 import { submissionService } from "../../services/submissionService";
 import { userService } from "../../services/userService";
 import { supabase } from "../../integrations/supabase/client";
-import { 
+import {
   ArrowLeft, Save, Plus, Trash2, X, ChevronUp, ChevronDown,
   Type, List, CheckSquare, ChevronRight, UserPlus,
   Settings, Users, Target, Info, Sparkles, Globe, AlertCircle
 } from "lucide-react";
-import { Survey, Region, Researcher, Client, Quota, SurveyStatus } from "../../types";
+import { SurveyOptionImageControl } from "../../components/admin/SurveyOptionImageControl";
+import { Survey, Region, Researcher, Client, Quota, SurveyStatus, SurveyOptionImage } from "../../types";
 import { cn } from "../../lib/utils";
 
 type QuestionType = 'text' | 'radio' | 'checkbox' | 'select' | 'scale';
@@ -56,6 +58,12 @@ export default function SurveyForm() {
   const { data: survey, isLoading } = useQuery({
     queryKey: ['survey', id],
     queryFn: () => surveyService.getById(id!),
+    enabled: isEditing
+  });
+
+  const { data: optionImages = [] } = useQuery<SurveyOptionImage[]>({
+    queryKey: ['survey-option-images', id],
+    queryFn: () => surveyOptionImageService.getForSurvey(id!),
     enabled: isEditing
   });
 
@@ -617,18 +625,27 @@ export default function SurveyForm() {
                                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                                    {(q.options || []).map((opt, optIndex) => (
                                      <div key={`${q.id}-${optIndex}`} className="relative group">
-                                       <input
-                                         type="text"
-                                         value={opt}
-                                         onChange={(e) => handleUpdateQuestion(q.id, { options: q.options?.map((option, index) => index === optIndex ? e.target.value : option) })}
-                                         disabled={!canEditStructure}
-                                         className="w-full px-4 pr-10 py-2 bg-slate-50 dark:bg-slate-800 border border-outline rounded-xl font-medium text-xs transition-colors focus:bg-white focus:border-primary/20 focus:outline-none disabled:cursor-not-allowed disabled:opacity-70"
-                                       />
+                                       <div className="flex items-center gap-2">
+                                         <input
+                                           type="text"
+                                           value={opt}
+                                           onChange={(e) => handleUpdateQuestion(q.id, { options: q.options?.map((option, index) => index === optIndex ? e.target.value : option) })}
+                                           disabled={!canEditStructure}
+                                           className="min-w-0 flex-1 px-4 pr-10 py-2 bg-slate-50 dark:bg-slate-800 border border-outline rounded-xl font-medium text-xs transition-colors focus:bg-white focus:border-primary/20 focus:outline-none disabled:cursor-not-allowed disabled:opacity-70"
+                                         />
+                                         <SurveyOptionImageControl
+                                           surveyId={id}
+                                           questionId={q.id}
+                                           alternative={opt}
+                                           optionIndex={optIndex}
+                                           image={optionImages.find(image => image.pergunta_id === q.id && image.alternativa === opt)}
+                                         />
+                                       </div>
                                        <button
                                          type="button"
                                          onClick={() => handleRemoveOption(q.id, optIndex)}
                                          disabled={!canEditStructure}
-                                         className="absolute top-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-on-surface-variant opacity-0 pointer-events-none transition-all hover:bg-error hover:text-white focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error/40 group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-0"
+                                         className="absolute top-1.5 right-[3.75rem] flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-on-surface-variant opacity-0 pointer-events-none transition-all hover:bg-error hover:text-white focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error/40 group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-0"
                                          aria-label={`Excluir alternativa ${optIndex + 1}`}
                                          title="Excluir alternativa"
                                        >

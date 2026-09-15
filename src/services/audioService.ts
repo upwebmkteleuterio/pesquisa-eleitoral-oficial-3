@@ -12,8 +12,8 @@ export interface AudioRecordingSession {
   cancel: () => void;
 }
 
-const AUDIO_DURATION_MS = 45_000;
-const MINIMUM_AUDIO_DURATION_MS = 44_500;
+const AUDIO_DURATION_MS = 120_000;
+const MINIMUM_AUDIO_DURATION_MS = 119_500;
 const preferredMimeTypes = [
   'audio/webm;codecs=opus',
   'audio/webm',
@@ -98,7 +98,7 @@ export async function startAudioRecording(consentAt: string): Promise<AudioRecor
       rejectCompleted(new Error('recording-failed'));
       return;
     }
-    resolveCompleted({ blob, mimeType: finalMimeType, durationSeconds: 45 });
+    resolveCompleted({ blob, mimeType: finalMimeType, durationSeconds: 120 });
   };
 
   const interrupt = () => {

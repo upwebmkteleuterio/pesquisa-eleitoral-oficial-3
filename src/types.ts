@@ -46,6 +46,16 @@ export interface Survey {
   permitir_link_publico?: boolean;
 }
 
+export interface SurveyOptionImage {
+  id: string;
+  pesquisa_id: string;
+  pergunta_id: string;
+  alternativa: string;
+  storage_path: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Quota {
   id: string;
   formulario_id: string;

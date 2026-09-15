@@ -2,12 +2,14 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { surveyService } from "../services/surveyService";
+import { surveyOptionImageService } from "../services/surveyOptionImageService";
 import { SubmissionPersistenceError, submissionService } from "../services/submissionService";
 import { useCollectionStore } from "../store";
 import { ArrowLeft, ArrowRight, CheckCircle, Camera, RefreshCw, AlertTriangle, MapPin, ChevronDown } from "lucide-react";
 import { cn } from "../lib/utils";
 import { calculateFormProgress } from "../lib/progressUtils";
 import { AutoSuggestInput } from "../components/AutoSuggestInput";
+import { SurveyOptionImage } from "../components/SurveyOptionImage";
 import { AudioConsentGate } from "../components/AudioConsentGate";
 import { AudioRecordingSession, getAudioErrorMessage } from "../services/audioService";
 
@@ -43,6 +45,24 @@ export default function CollectionForm() {
     enabled: !!id,
     staleTime: 1000 * 60 * 5 // 5 minutos de cache em memória
   });
+
+  const { data: optionImages = [] } = useQuery({
+    queryKey: ['survey-option-images', id],
+    queryFn: () => surveyOptionImageService.getForSurvey(id!),
+    enabled: !!id,
+    staleTime: 1000 * 60 * 5,
+    refetchOnReconnect: true
+  });
+
+  useEffect(() => {
+    if (!id) return;
+    const refreshOptionImages = () => {
+      queryClient.invalidateQueries({ queryKey: ['survey-option-images', id] });
+      queryClient.invalidateQueries({ queryKey: ['survey-option-image-bytes'] });
+    };
+    window.addEventListener('online', refreshOptionImages);
+    return () => window.removeEventListener('online', refreshOptionImages);
+  }, [id, queryClient]);
 
   const { data: demographicOptions } = useQuery({
     queryKey: ['demographic_options'],
@@ -496,13 +516,18 @@ export default function CollectionForm() {
                               checked={currentCollection.dynamicAnswers[q.id] === opt}
                               onChange={() => updateDynamicAnswer(q.id, opt)}
                             />
-                             <span className="ml-4 text-base font-bold">{opt}</span>
-                          </label>
-                       ))}
-                    </div>
-                  )}
+                            <SurveyOptionImage
+                              image={optionImages.find(image => image.pergunta_id === q.id && image.alternativa === opt)}
+                              alt={`Imagem da alternativa ${opt}`}
+                              className="ml-4 h-14 w-14 rounded-xl border border-outline object-cover"
+                            />
+                            <span className="ml-4 text-base font-bold">{opt}</span>
+                         </label>
+                      ))}
+                   </div>
+                 )}
 
-                  {q.type === 'text' && (
+                 {q.type === 'text' && (
                     <AutoSuggestInput 
                       placeholder="Toque para digitar sua resposta..."
                       value={currentCollection.dynamicAnswers[q.id] || ""}
@@ -548,6 +573,11 @@ export default function CollectionForm() {
                                   : [...currentValues, opt];
                                 updateDynamicAnswer(q.id, newValues);
                               }}
+                            />
+                            <SurveyOptionImage
+                              image={optionImages.find(image => image.pergunta_id === q.id && image.alternativa === opt)}
+                              alt={`Imagem da alternativa ${opt}`}
+                              className="ml-4 h-14 w-14 rounded-xl border border-outline object-cover"
                             />
                             <span className="ml-4 text-base font-bold">{opt}</span>
                           </label>

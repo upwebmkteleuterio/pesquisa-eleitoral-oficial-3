@@ -24,6 +24,7 @@ import SurveyForm from "./pages/admin/SurveyForm";
 import RegionsList from "./pages/admin/RegionsList";
 import Reports from "./pages/admin/Reports";
 import SubmissionsList from "./pages/admin/SubmissionsList";
+import Ranking from "./pages/admin/Ranking";
 import History from "./pages/admin/History";
 import AiFormGenerator from "./pages/admin/AiFormGenerator";
 import Login from "./pages/Login";
@@ -117,6 +118,7 @@ function AppRoutes() {
           <Route path="formularios/editar/:id" element={<SurveyForm />} />
           <Route path="regioes" element={<RegionsList />} />
           <Route path="respostas" element={<SubmissionsList />} />
+          <Route path="ranking" element={<Ranking />} />
           <Route path="historico" element={<History />} />
           <Route path="relatorios" element={<Reports />} />
           <Route path="gerar-ia" element={<AiFormGenerator />} />

@@ -1,4 +1,4 @@
-import { Users, FileText, Map, Settings, PieChart, Database, X, Sparkles, ChevronLeft, ChevronRight, History, LogOut } from "lucide-react";
+import { Users, FileText, Map, Settings, PieChart, Database, Trophy, X, Sparkles, ChevronLeft, ChevronRight, History, LogOut } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "../../lib/utils";
 import { motion } from "motion/react";
@@ -44,6 +44,7 @@ export function AdminSidebar({ isOpen, onClose, isCollapsed, onToggleCollapse }:
         { icon: History, label: "Histórico", path: "/adm/historico" },
         { icon: Database, label: "Respostas", path: "/adm/respostas" },
         { icon: PieChart, label: "Relatórios", path: "/adm/relatorios" },
+        { icon: Trophy, label: "Ranking de Produtividade", path: "/adm/ranking" },
       ]
     }
   ];

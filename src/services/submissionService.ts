@@ -13,7 +13,21 @@ type SyncResult = { successCount: number; failureCount: number; totalCount: numb
 export type LocalAudioSubmission = { key: string; submission: Submission };
 
 const RETRY_DELAYS_MS = [1000, 3000];
+const SYNC_TIMEOUT_MS = 15_000;
 let activeSync: Promise<SyncResult> | null = null;
+
+export class SubmissionPersistenceError extends Error {
+  constructor(cause: unknown) {
+    super('submission-local-persistence-failed', { cause });
+    this.name = 'SubmissionPersistenceError';
+  }
+}
+
+const createSyncTimeoutError = () => {
+  const error = new Error('submission-sync-timeout');
+  error.name = 'SubmissionSyncTimeoutError';
+  return error;
+};
 
 const getHttpStatus = (error: unknown): number | undefined => {
   if (typeof error !== 'object' || error === null) return undefined;
@@ -27,18 +41,30 @@ const isPermanentHttpError = (error: unknown): boolean => {
   return status !== undefined && status >= 400 && status < 500;
 };
 
-const waitForRetry = (delayMs: number): Promise<void> => new Promise((resolve, reject) => {
+const waitForRetry = (delayMs: number, signal: AbortSignal): Promise<void> => new Promise((resolve, reject) => {
   if (!navigator.onLine) {
     reject(new Error('offline'));
     return;
   }
+  if (signal.aborted) {
+    reject(signal.reason || createSyncTimeoutError());
+    return;
+  }
 
   let timeoutId: ReturnType<typeof setTimeout>;
-  const cleanup = () => window.removeEventListener('offline', handleOffline);
+  const cleanup = () => {
+    window.removeEventListener('offline', handleOffline);
+    signal.removeEventListener('abort', handleAbort);
+  };
   const handleOffline = () => {
     clearTimeout(timeoutId);
     cleanup();
     reject(new Error('offline'));
+  };
+  const handleAbort = () => {
+    clearTimeout(timeoutId);
+    cleanup();
+    reject(signal.reason || createSyncTimeoutError());
   };
 
   timeoutId = setTimeout(() => {
@@ -46,23 +72,45 @@ const waitForRetry = (delayMs: number): Promise<void> => new Promise((resolve, r
     resolve();
   }, delayMs);
   window.addEventListener('offline', handleOffline);
+  signal.addEventListener('abort', handleAbort, { once: true });
 });
 
-const withNetworkRetries = async <T>(operation: () => Promise<T>): Promise<T> => {
+const withNetworkRetries = async <T>(operation: (signal: AbortSignal) => Promise<T>, signal: AbortSignal): Promise<T> => {
   for (let attempt = 0; attempt < 3; attempt++) {
     if (!navigator.onLine) throw new Error('offline');
+    if (signal.aborted) throw signal.reason || createSyncTimeoutError();
 
     try {
-      const result = await operation();
+      const result = await operation(signal);
       if (!navigator.onLine) throw new Error('offline');
+      if (signal.aborted) throw signal.reason || createSyncTimeoutError();
       return result;
     } catch (error) {
-      if (attempt === 2 || isPermanentHttpError(error) || !navigator.onLine) throw error;
-      await waitForRetry(RETRY_DELAYS_MS[attempt]);
+      if (attempt === 2 || isPermanentHttpError(error) || !navigator.onLine || signal.aborted) throw error;
+      await waitForRetry(RETRY_DELAYS_MS[attempt], signal);
     }
   }
 
   throw new Error('sync-retries-exhausted');
+};
+
+const withSyncTimeout = async <T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> => {
+  const controller = new AbortController();
+  const timeoutError = createSyncTimeoutError();
+  let timeoutId: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      controller.abort(timeoutError);
+      reject(timeoutError);
+    }, SYNC_TIMEOUT_MS);
+  });
+
+  try {
+    return await Promise.race([operation(controller.signal), timeout]);
+  } finally {
+    clearTimeout(timeoutId!);
+    if (!controller.signal.aborted) controller.abort();
+  }
 };
 
 const runExclusiveSync = (operation: () => Promise<SyncResult>): Promise<SyncResult> => {
@@ -186,42 +234,48 @@ export const submissionService = {
   },
 
   async save(submission: Omit<Submission, "id" | "status_sincronizacao" | "valida"> & { id?: string; valida?: boolean }): Promise<Submission> {
-    const submissions = await this.getAll();
     const newSubmission: Submission = {
       ...submission,
       id: submission.id || crypto.randomUUID(),
       status_sincronizacao: false,
       valida: submission.valida ?? true
     };
-    const updated = [newSubmission, ...submissions];
-    await localforage.setItem(SUBMISSIONS_KEY, updated);
+
+    try {
+      const submissions = await this.getAll();
+      await localforage.setItem(SUBMISSIONS_KEY, [newSubmission, ...submissions]);
+    } catch (error) {
+      throw new SubmissionPersistenceError(error);
+    }
 
     if (!navigator.onLine) return newSubmission;
 
     try {
       await this.syncOne(newSubmission);
       return { ...newSubmission, status_sincronizacao: true };
-    } catch (e) {
-      console.warn("[submissionService] Sync failed, item kept local", e);
+    } catch (error) {
+      if (error instanceof SubmissionPersistenceError) throw error;
       return newSubmission;
     }
   },
 
   async syncOne(submission: Submission): Promise<void> {
-    if (activeSync) {
-      await activeSync;
-      const current = (await this.getAll()).find(item => item.id === submission.id);
-      if (!current || current.status_sincronizacao) return;
-      submission = current;
-    }
+    await withSyncTimeout(async (signal) => {
+      if (activeSync) {
+        await activeSync;
+        const current = (await this.getAll()).find(item => item.id === submission.id);
+        if (!current || current.status_sincronizacao) return;
+        submission = current;
+      }
 
-    await runExclusiveSync(async () => {
-      await this.syncOneInternal(submission);
-      return { successCount: 1, failureCount: 0, totalCount: 1 };
+      await runExclusiveSync(async () => {
+        await this.syncOneInternal(submission, signal);
+        return { successCount: 1, failureCount: 0, totalCount: 1 };
+      });
     });
   },
 
-  async syncOneInternal(submission: Submission): Promise<void> {
+  async syncOneInternal(submission: Submission, signal: AbortSignal): Promise<void> {
     if (!navigator.onLine) throw new Error('offline');
 
     const { dados_fixos, respostas_dinamicas, geolocalizacao, data_coleta, formulario_id, pesquisador_id, nome_entrevistado, bairro, telefone, origem, referenciado_por } = submission;
@@ -254,10 +308,13 @@ export const submissionService = {
       audio_consent_state: submission.audio?.consent_state
     };
 
-    await withNetworkRetries(async () => {
-      const { error } = await supabase.from('submissoes').upsert(payload, { onConflict: 'id' });
+    await withNetworkRetries(async (requestSignal) => {
+      const { error } = await supabase
+        .from('submissoes')
+        .upsert(payload, { onConflict: 'id' })
+        .abortSignal(requestSignal);
       if (error) throw error;
-    });
+    }, signal);
 
     if (submission.audio?.blob && audioPath) {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -270,14 +327,18 @@ export const submissionService = {
           .from(AUDIO_BUCKET)
           .upload(audioPath, submission.audio!.blob!, { contentType: submission.audio!.mime_type, upsert: true });
         if (uploadError) throw uploadError;
-      });
+      }, signal);
     }
 
-    const submissions = await this.getAll();
-    const updated = submissions.map(s => s.id === submission.id
-      ? { ...s, status_sincronizacao: true, audio: s.audio ? { ...s.audio, blob: undefined, storage_path: audioPath } : undefined }
-      : s);
-    await localforage.setItem(SUBMISSIONS_KEY, updated);
+    try {
+      const submissions = await this.getAll();
+      const updated = submissions.map(s => s.id === submission.id
+        ? { ...s, status_sincronizacao: true, audio: s.audio ? { ...s.audio, blob: undefined, storage_path: audioPath } : undefined }
+        : s);
+      await localforage.setItem(SUBMISSIONS_KEY, updated);
+    } catch (error) {
+      throw new SubmissionPersistenceError(error);
+    }
   },
 
   async getAudioPlaybackUrl(submission: Submission): Promise<string> {
@@ -404,11 +465,10 @@ export const submissionService = {
         }
 
         try {
-          await this.syncOneInternal(sub);
+          await withSyncTimeout((signal) => this.syncOneInternal(sub, signal));
           successCount++;
         } catch (e) {
           failureCount++;
-          console.error(`[submissionService] Failed to sync submission ${sub.id}`, e);
           if (!navigator.onLine) {
             failureCount += unsynced.length - index - 1;
             break;

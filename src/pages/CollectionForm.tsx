@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { surveyService } from "../services/surveyService";
-import { submissionService } from "../services/submissionService";
+import { SubmissionPersistenceError, submissionService } from "../services/submissionService";
 import { useCollectionStore } from "../store";
 import { ArrowLeft, ArrowRight, CheckCircle, Camera, RefreshCw, AlertTriangle, MapPin, ChevronDown } from "lucide-react";
 import { cn } from "../lib/utils";
@@ -34,6 +34,7 @@ export default function CollectionForm() {
   const [localSuggestions, setLocalSuggestions] = useState<Record<string, string[]>>({});
   const [audioSession, setAudioSession] = useState<AudioRecordingSession | null>(null);
   const [isWaitingAudio, setIsWaitingAudio] = useState(false);
+  const [showPendingSyncModal, setShowPendingSyncModal] = useState(false);
 
   // Query otimizada: O surveyService agora tenta o cache primeiro
   const { data: survey, isLoading: isLoadingSurvey, isError: surveyError, refetch: retrySurvey } = useQuery({
@@ -124,12 +125,22 @@ export default function CollectionForm() {
 
   const submitMutation = useMutation({
     mutationFn: (data: any) => submissionService.save(data),
-    onSuccess: () => {
+    onSuccess: (submission) => {
       queryClient.invalidateQueries({ queryKey: ['submissions'] });
       queryClient.invalidateQueries({ queryKey: ['surveys_list'] });
       queryClient.invalidateQueries({ queryKey: ['quotas', id] });
-      clearCollection();
-      navigate('/success');
+
+      if (submission.status_sincronizacao) {
+        clearCollection();
+        navigate('/success');
+      } else {
+        setShowPendingSyncModal(true);
+      }
+    },
+    onError: (error) => {
+      setValidationAlert(error instanceof SubmissionPersistenceError
+        ? 'Não foi possível salvar a pesquisa neste dispositivo. Verifique o armazenamento disponível e tente novamente.'
+        : 'Não foi possível concluir o salvamento da pesquisa. Nenhum envio foi confirmado pelo servidor.');
     }
   });
 
@@ -185,6 +196,13 @@ export default function CollectionForm() {
   const handleLeaveCollection = () => {
     audioSession.cancel();
     navigate(-1);
+  };
+
+  const handleStartNewCollection = () => {
+    audioSession.cancel();
+    clearCollection();
+    setShowPendingSyncModal(false);
+    navigate('/');
   };
 
   const handleFinalize = async () => {
@@ -599,6 +617,35 @@ export default function CollectionForm() {
           </button>
         </div>
       </footer>
+
+      {/* Pending Synchronization Modal */}
+      {showPendingSyncModal && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 p-5 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="pending-sync-title"
+        >
+          <div className="w-full max-w-sm overflow-hidden rounded-3xl border border-outline bg-white shadow-2xl dark:bg-slate-900">
+            <div className="flex items-center gap-4 border-b border-outline bg-amber-50 p-6 dark:bg-amber-950/30">
+              <AlertTriangle className="text-amber-500" size={32} aria-hidden="true" />
+              <h3 id="pending-sync-title" className="text-xl font-bold text-on-surface">Pesquisa salva neste dispositivo</h3>
+            </div>
+            <div className="space-y-6 p-8">
+              <p className="text-center font-medium text-on-surface-variant">
+                Não houve confirmação de envio ao servidor. A pesquisa permanece salva neste dispositivo e será sincronizada automaticamente quando possível.
+              </p>
+              <button
+                type="button"
+                onClick={handleStartNewCollection}
+                className="w-full rounded-2xl bg-primary py-4 font-bold text-white shadow-lg shadow-primary/20 transition-all hover:brightness-110 active:scale-95"
+              >
+                Iniciar nova pesquisa
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Validation Modal */}
       {validationAlert && (

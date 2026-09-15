@@ -1,6 +1,7 @@
 import { motion } from "motion/react";
 import { Award, Medal, Trophy } from "lucide-react";
 import type { RankedResearcher } from "../../../hooks/useRankingData";
+import { ResearcherAvatar } from "../../ResearcherAvatar";
 
 function PositionIcon({ position }: { position: number }) {
   if (position === 1) return <Trophy size={24} className="text-yellow-400 drop-shadow-sm" />;
@@ -19,7 +20,6 @@ interface RankingRowProps {
 
 export function RankingRow({ researcher, position, maxCount, isAnimationActive }: RankingRowProps) {
   const progress = (researcher.collectionCount / maxCount) * 100;
-  const initial = researcher.nome.trim().charAt(0).toUpperCase() || "?";
   const animationDelay = (position - 1) * 0.15;
   const progressClass = position === 1
     ? "bg-gradient-to-r from-yellow-400 to-yellow-500"
@@ -36,9 +36,7 @@ export function RankingRow({ researcher, position, maxCount, isAnimationActive }
       </div>
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2 md:gap-3">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#E6F8F2] text-sm font-bold text-[#00B67A] md:h-10 md:w-10 md:text-lg">
-            {initial}
-          </div>
+          <ResearcherAvatar name={researcher.nome} src={researcher.foto_avatar_url} className="h-8 w-8 shrink-0 rounded-lg bg-[#E6F8F2] text-sm font-bold text-[#00B67A] md:h-10 md:w-10 md:text-lg" />
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-slate-900 transition-colors group-hover:text-[#00B67A]">{researcher.nome}</p>
             <p className="flex min-w-0 items-center gap-1 truncate text-[10px] text-slate-500 md:gap-2 md:text-xs">

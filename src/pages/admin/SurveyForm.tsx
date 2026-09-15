@@ -12,6 +12,7 @@ import {
   Settings, Users, Target, Info, Sparkles, Globe, AlertCircle
 } from "lucide-react";
 import { SurveyOptionImageControl } from "../../components/admin/SurveyOptionImageControl";
+import { ResearcherAvatar } from "../../components/ResearcherAvatar";
 import { Survey, Region, Researcher, Client, Quota, SurveyStatus, SurveyOptionImage } from "../../types";
 import { cn } from "../../lib/utils";
 
@@ -871,13 +872,7 @@ export default function SurveyForm() {
                               : "bg-slate-50 dark:bg-slate-800 border-transparent hover:border-outline"
                           )}
                         >
-                          {r.foto_avatar_url ? (
-                            <img src={r.foto_avatar_url} className="w-12 h-12 rounded-xl border border-white object-cover" alt="" />
-                          ) : (
-                            <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-black text-xl border-2 border-white shadow-sm uppercase">
-                              {r.nome.charAt(0)}
-                            </div>
-                          )}
+                          <ResearcherAvatar name={r.nome} src={r.foto_avatar_url} className="h-12 w-12 rounded-xl border-2 border-white text-xl shadow-sm" />
                           <div className="flex-1">
                             <p className={cn("font-bold text-sm", isSelected ? "text-primary" : "text-on-surface")}>{r.nome}</p>
                             <p className="text-[10px] text-on-surface-variant font-medium truncate">{r.email}</p>

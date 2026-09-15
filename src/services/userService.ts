@@ -1,5 +1,19 @@
 import { supabase } from "@/src/integrations/supabase/client";
 import { Client, Researcher } from "../types";
+import { indexResearcherDirectory, researcherDirectoryService } from "./researcherDirectoryService";
+
+async function enrichResearchers<T extends { id: string; foto_avatar_url?: string | null }>(users: T[]): Promise<T[]> {
+  if (!users.length) return users;
+  try {
+    const directory = indexResearcherDirectory(await researcherDirectoryService.getByIds(users.map(user => user.id)));
+    return users.map(user => {
+      const entry = directory.get(user.id);
+      return entry ? { ...user, foto_avatar_url: entry.foto_avatar_url || user.foto_avatar_url || null, foto_avatar_path: entry.foto_avatar_path || null } : user;
+    });
+  } catch {
+    return users;
+  }
+}
 
 export const userService = {
   async getProfile(): Promise<(Researcher | Client) | null> {
@@ -13,7 +27,12 @@ export const userService = {
       .single();
     
     if (error) return null;
-    return data as any;
+    const profile = data as Researcher | Client;
+    if (profile.role === "pesquisador") {
+      const [enriched] = await enrichResearchers([profile]);
+      return enriched as Researcher;
+    }
+    return profile;
   },
 
   async updateProfile(data: Partial<Researcher>): Promise<Researcher> {
@@ -39,7 +58,7 @@ export const userService = {
       .order('nome', { ascending: true });
     
     if (error) throw error;
-    return data as any;
+    return enrichResearchers((data || []) as Researcher[]);
   },
 
   async getAllUsers(): Promise<Researcher[]> {
@@ -50,7 +69,7 @@ export const userService = {
       .order('nome', { ascending: true });
     
     if (error) throw error;
-    return data as any;
+    return enrichResearchers((data || []) as Researcher[]);
   },
 
   async getAllClients(): Promise<Client[]> {

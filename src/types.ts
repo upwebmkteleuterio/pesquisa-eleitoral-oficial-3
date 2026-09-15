@@ -5,7 +5,8 @@ export interface Researcher {
   nome: string;
   email: string;
   cpf: string;
-  foto_avatar_url: string;
+  foto_avatar_url?: string | null;
+  foto_avatar_path?: string | null;
   usuario_id: string;
   role?: string;
 }
@@ -17,7 +18,7 @@ export interface Client {
   cpf?: string | null;
   nome_empresa?: string | null;
   pesquisa_ids?: string[];
-  foto_avatar_url?: string;
+  foto_avatar_url?: string | null;
   role: 'cliente';
 }
 

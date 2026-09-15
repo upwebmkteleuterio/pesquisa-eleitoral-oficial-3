@@ -7,6 +7,7 @@ import { ResearcherForm } from "./ResearcherForm";
 import { Researcher } from "../../types";
 import { motion, AnimatePresence } from "motion/react";
 import { cn } from "../../lib/utils";
+import { ResearcherAvatar } from "../../components/ResearcherAvatar";
 
 export default function ResearchersList() {
   const queryClient = useQueryClient();
@@ -128,17 +129,7 @@ export default function ResearchersList() {
                   <tr key={researcher.id} className="border-b border-outline/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
                     <td className="px-4 py-4">
                       <div className="flex items-center gap-4">
-                        {researcher.foto_avatar_url ? (
-                          <img 
-                            src={researcher.foto_avatar_url} 
-                            alt={researcher.nome} 
-                            className="w-12 h-12 rounded-xl object-cover border-2 border-white shadow-sm"
-                          />
-                        ) : (
-                          <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-black text-xl border-2 border-white shadow-sm uppercase">
-                            {researcher.nome.charAt(0)}
-                          </div>
-                        )}
+                        <ResearcherAvatar name={researcher.nome} src={researcher.foto_avatar_url} className="h-12 w-12 rounded-xl border-2 border-white text-xl shadow-sm" />
                         <div>
                           <p className="font-bold text-on-surface">{researcher.nome}</p>
                           <p className="text-[10px] text-primary font-black uppercase tracking-tighter">ID: {researcher.id}</p>
@@ -217,13 +208,7 @@ export default function ResearchersList() {
               <div className="space-y-4 mb-8">
                 <h2 className="text-3xl font-black text-on-surface tracking-tight leading-tight">Remover Pesquisador?</h2>
                 <div className="flex items-center gap-4 p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-outline">
-                  {researcherToDelete.foto_avatar_url ? (
-                    <img src={researcherToDelete.foto_avatar_url} className="w-12 h-12 rounded-xl object-cover" alt="" />
-                  ) : (
-                    <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-black text-xl uppercase">
-                      {researcherToDelete.nome.charAt(0)}
-                    </div>
-                  )}
+                  <ResearcherAvatar name={researcherToDelete.nome} src={researcherToDelete.foto_avatar_url} className="h-12 w-12 rounded-xl text-xl" />
                   <div>
                     <p className="font-bold text-on-surface">{researcherToDelete.nome}</p>
                     <p className="text-xs text-on-surface-variant">{researcherToDelete.email}</p>
@@ -257,13 +242,7 @@ export default function ResearchersList() {
                             )}
                           >
                             <div className="flex items-center gap-3">
-                              {r.foto_avatar_url ? (
-                                <img src={r.foto_avatar_url} className="w-8 h-8 rounded-lg object-cover" alt="" />
-                              ) : (
-                                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold text-xs uppercase">
-                                  {r.nome.charAt(0)}
-                                </div>
-                              )}
+                              <ResearcherAvatar name={r.nome} src={r.foto_avatar_url} className="h-8 w-8 rounded-lg text-xs" />
                               <span className="text-sm font-bold truncate max-w-[180px]">{r.nome}</span>
                             </div>
                             {targetResearcherId === r.id && <ArrowRight size={16} />}

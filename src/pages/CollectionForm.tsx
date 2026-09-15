@@ -12,6 +12,8 @@ import { AutoSuggestInput } from "../components/AutoSuggestInput";
 import { SurveyOptionImage } from "../components/SurveyOptionImage";
 import { AudioConsentGate } from "../components/AudioConsentGate";
 import { AudioRecordingSession, getAudioErrorMessage } from "../services/audioService";
+import { SubmissionProgress } from "../types";
+import { SubmissionProgressOverlay } from "../components/SubmissionProgressOverlay";
 
 import { useAuth } from "../contexts/AuthContext";
 
@@ -36,6 +38,7 @@ export default function CollectionForm() {
   const [localSuggestions, setLocalSuggestions] = useState<Record<string, string[]>>({});
   const [audioSession, setAudioSession] = useState<AudioRecordingSession | null>(null);
   const [isWaitingAudio, setIsWaitingAudio] = useState(false);
+  const [finalizationProgress, setFinalizationProgress] = useState<SubmissionProgress | null>(null);
   const [showPendingSyncModal, setShowPendingSyncModal] = useState(false);
 
   // Query otimizada: O surveyService agora tenta o cache primeiro
@@ -144,8 +147,9 @@ export default function CollectionForm() {
   };
 
   const submitMutation = useMutation({
-    mutationFn: (data: any) => submissionService.save(data),
+    mutationFn: (data: any) => submissionService.save(data, (progress) => setFinalizationProgress(progress)),
     onSuccess: (submission) => {
+      setFinalizationProgress(null);
       queryClient.invalidateQueries({ queryKey: ['submissions'] });
       queryClient.invalidateQueries({ queryKey: ['surveys_list'] });
       queryClient.invalidateQueries({ queryKey: ['quotas', id] });
@@ -158,6 +162,7 @@ export default function CollectionForm() {
       }
     },
     onError: (error) => {
+      setFinalizationProgress(null);
       setValidationAlert(error instanceof SubmissionPersistenceError
         ? 'Não foi possível salvar a pesquisa neste dispositivo. Verifique o armazenamento disponível e tente novamente.'
         : 'Não foi possível concluir o salvamento da pesquisa. Nenhum envio foi confirmado pelo servidor.');
@@ -233,6 +238,7 @@ export default function CollectionForm() {
       return;
     }
 
+    setFinalizationProgress({ stage: 'preparing-audio', percentage: 10, label: 'Preparando áudio' });
     setIsWaitingAudio(true);
     let recordingResult;
     try {
@@ -240,6 +246,7 @@ export default function CollectionForm() {
     } catch (recordingError) {
       setAudioSession(null);
       setIsWaitingAudio(false);
+      setFinalizationProgress(null);
       setValidationAlert(getAudioErrorMessage(recordingError));
       return;
     }
@@ -647,6 +654,10 @@ export default function CollectionForm() {
           </button>
         </div>
       </footer>
+
+      {finalizationProgress && (
+        <SubmissionProgressOverlay progress={finalizationProgress} />
+      )}
 
       {/* Pending Synchronization Modal */}
       {showPendingSyncModal && (

@@ -1,7 +1,7 @@
 import localforage from "localforage";
 import { supabase } from "@/src/integrations/supabase/client";
 import { getAudioExtension } from "./audioService";
-import { Submission, SubmissionEdits } from "../types";
+import { Submission, SubmissionEdits, SubmissionProgress, SubmissionProgressCallback } from "../types";
 
 const SUBMISSIONS_KEY = "electoral_submissions";
 const AUDIO_BUCKET = "submission-audio";
@@ -15,6 +15,14 @@ export type LocalAudioSubmission = { key: string; submission: Submission };
 const RETRY_DELAYS_MS = [1000, 3000];
 const SYNC_TIMEOUT_MS = 15_000;
 let activeSync: Promise<SyncResult> | null = null;
+
+const reportProgress = (onProgress: SubmissionProgressCallback | undefined, progress: SubmissionProgress) => {
+  try {
+    onProgress?.(progress);
+  } catch {
+    // Progress notifications must not change submission behavior.
+  }
+};
 
 export class SubmissionPersistenceError extends Error {
   constructor(cause: unknown) {
@@ -233,7 +241,7 @@ export const submissionService = {
     return records.map(mapSubmission);
   },
 
-  async save(submission: Omit<Submission, "id" | "status_sincronizacao" | "valida"> & { id?: string; valida?: boolean }): Promise<Submission> {
+  async save(submission: Omit<Submission, "id" | "status_sincronizacao" | "valida"> & { id?: string; valida?: boolean }, onProgress?: SubmissionProgressCallback): Promise<Submission> {
     const newSubmission: Submission = {
       ...submission,
       id: submission.id || crypto.randomUUID(),
@@ -241,6 +249,7 @@ export const submissionService = {
       valida: submission.valida ?? true
     };
 
+    reportProgress(onProgress, { stage: 'saving-local', percentage: 25, label: 'Salvando localmente' });
     try {
       const submissions = await this.getAll();
       await localforage.setItem(SUBMISSIONS_KEY, [newSubmission, ...submissions]);
@@ -248,18 +257,23 @@ export const submissionService = {
       throw new SubmissionPersistenceError(error);
     }
 
-    if (!navigator.onLine) return newSubmission;
+    if (!navigator.onLine) {
+      reportProgress(onProgress, { stage: 'confirming', percentage: 90, label: 'Confirmando salvamento local' });
+      return newSubmission;
+    }
 
     try {
-      await this.syncOne(newSubmission);
+      await this.syncOne(newSubmission, onProgress);
+      reportProgress(onProgress, { stage: 'complete', percentage: 100, label: 'Pesquisa concluída' });
       return { ...newSubmission, status_sincronizacao: true };
     } catch (error) {
       if (error instanceof SubmissionPersistenceError) throw error;
+      reportProgress(onProgress, { stage: 'confirming', percentage: 90, label: 'Salvo, aguardando sincronização' });
       return newSubmission;
     }
   },
 
-  async syncOne(submission: Submission): Promise<void> {
+  async syncOne(submission: Submission, onProgress?: SubmissionProgressCallback): Promise<void> {
     await withSyncTimeout(async (signal) => {
       if (activeSync) {
         await activeSync;
@@ -269,13 +283,13 @@ export const submissionService = {
       }
 
       await runExclusiveSync(async () => {
-        await this.syncOneInternal(submission, signal);
+        await this.syncOneInternal(submission, signal, onProgress);
         return { successCount: 1, failureCount: 0, totalCount: 1 };
       });
     });
   },
 
-  async syncOneInternal(submission: Submission, signal: AbortSignal): Promise<void> {
+  async syncOneInternal(submission: Submission, signal: AbortSignal, onProgress?: SubmissionProgressCallback): Promise<void> {
     if (!navigator.onLine) throw new Error('offline');
 
     const { dados_fixos, respostas_dinamicas, geolocalizacao, data_coleta, formulario_id, pesquisador_id, nome_entrevistado, bairro, telefone, origem, referenciado_por } = submission;
@@ -308,6 +322,7 @@ export const submissionService = {
       audio_consent_state: submission.audio?.consent_state
     };
 
+    reportProgress(onProgress, { stage: 'sending-responses', percentage: 50, label: 'Enviando respostas' });
     await withNetworkRetries(async (requestSignal) => {
       const { error } = await supabase
         .from('submissoes')
@@ -317,6 +332,7 @@ export const submissionService = {
     }, signal);
 
     if (submission.audio?.blob && audioPath) {
+      reportProgress(onProgress, { stage: 'sending-audio', percentage: 75, label: 'Enviando áudio' });
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user || user.id !== pesquisador_id) {
         throw new Error('audio-upload-not-authorized');
@@ -330,6 +346,7 @@ export const submissionService = {
       }, signal);
     }
 
+    reportProgress(onProgress, { stage: 'confirming', percentage: 90, label: 'Confirmando envio' });
     try {
       const submissions = await this.getAll();
       const updated = submissions.map(s => s.id === submission.id

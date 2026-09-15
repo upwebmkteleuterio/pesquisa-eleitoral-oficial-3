@@ -74,6 +74,22 @@ export interface SubmissionAudio {
   consent_state: 'confirmed';
 }
 
+export type SubmissionProgressStage =
+  | 'preparing-audio'
+  | 'saving-local'
+  | 'sending-responses'
+  | 'sending-audio'
+  | 'confirming'
+  | 'complete';
+
+export interface SubmissionProgress {
+  stage: SubmissionProgressStage;
+  percentage: number;
+  label: string;
+}
+
+export type SubmissionProgressCallback = (progress: SubmissionProgress) => void;
+
 export interface Submission {
   id: string;
   formulario_id: string;

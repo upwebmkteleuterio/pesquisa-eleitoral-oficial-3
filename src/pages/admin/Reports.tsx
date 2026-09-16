@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { motion } from "motion/react";
@@ -56,6 +56,9 @@ const normalizeImageLabel = (value: string): string => value
   .replace(/\s+/g, ' ')
   .trim();
 
+const virtualSelectionKey = (surveyIds: string[]) => surveyIds.join('|');
+const virtualCardsMatch = (left: VirtualReportCardConfig[], right: VirtualReportCardConfig[]) => JSON.stringify(left) === JSON.stringify(right);
+
 type ChartType = 'horizontal' | 'vertical' | 'pie';
 
 function getTextResponseOptions(submissions: any[] | undefined, questionId: string): ResponseMergeOption[] {
@@ -100,6 +103,9 @@ export default function Reports() {
   const queryClient = useQueryClient();
   const isAdmin = !!user && profile?.role === 'admin';
   const isClient = profile?.role === 'cliente';
+  const pendingVirtualCreatesRef = useRef(new Map<string, { cards: VirtualReportCardConfig[] }>());
+  const currentSelectionKeyRef = useRef(virtualSelectionKey(selectedSurveyIds));
+  currentSelectionKeyRef.current = virtualSelectionKey(selectedSurveyIds);
 
   const { data: surveys } = useQuery({
     queryKey: ['admin_surveys', user?.id || 'anonymous', profile?.role || 'unknown'],
@@ -217,20 +223,56 @@ export default function Reports() {
     );
   }, [isClient, surveys, virtualConfigs]);
   const virtualConfigMutation = useMutation({
-    mutationFn: (input: { id?: string; nome: string; pesquisa_ids: string[]; cards: VirtualReportCardConfig[] }) => {
-      const { id, ...configInput } = input;
+    mutationFn: (input: {
+      id?: string;
+      nome: string;
+      pesquisa_ids: string[];
+      cards: VirtualReportCardConfig[];
+      autoSave?: boolean;
+      autoCreate?: boolean;
+      selectionKey?: string;
+    }) => {
+      if (!isAdmin || !user) throw new Error("Apenas administradores autenticados podem salvar configurações virtuais.");
+      const { id, autoSave: _autoSave, autoCreate: _autoCreate, selectionKey: _selectionKey, ...configInput } = input;
       return id
         ? virtualReportMergeService.updateVirtualReportMerge(id, configInput)
-        : virtualReportMergeService.createVirtualReportMerge({ ...configInput, criado_por: user?.id });
+        : virtualReportMergeService.createVirtualReportMerge({ ...configInput, criado_por: user.id });
     },
-    onSuccess: async (config) => {
+    onSuccess: async (config, variables) => {
       await queryClient.invalidateQueries({ queryKey: ['virtual-report-merges'] });
+      if (variables.autoCreate && variables.selectionKey) {
+        const pendingCreate = pendingVirtualCreatesRef.current.get(variables.selectionKey);
+        if (!pendingCreate) return;
+        pendingVirtualCreatesRef.current.delete(variables.selectionKey);
+        if (currentSelectionKeyRef.current === variables.selectionKey) setActiveVirtualConfig(config);
+        if (!virtualCardsMatch(pendingCreate.cards, variables.cards)) {
+          virtualConfigMutation.mutate({
+            id: config.id,
+            nome: config.nome,
+            pesquisa_ids: variables.pesquisa_ids,
+            cards: pendingCreate.cards,
+            autoSave: true,
+            selectionKey: variables.selectionKey,
+          });
+        }
+        return;
+      }
+      if (variables.autoSave) {
+        if (variables.selectionKey === currentSelectionKeyRef.current) setActiveVirtualConfig(config);
+        return;
+      }
       setActiveVirtualConfig(config);
       setVirtualConfigModal(null);
     },
+    onError: (_error, variables) => {
+      if (variables.autoCreate && variables.selectionKey) pendingVirtualCreatesRef.current.delete(variables.selectionKey);
+    },
   });
   const virtualDeleteMutation = useMutation({
-    mutationFn: (id: string) => virtualReportMergeService.deleteVirtualReportMerge(id),
+    mutationFn: (id: string) => {
+      if (!isAdmin || !user) throw new Error("Apenas administradores autenticados podem excluir configurações virtuais.");
+      return virtualReportMergeService.deleteVirtualReportMerge(id);
+    },
     onSuccess: async (_, id) => {
       setActiveVirtualConfig(current => current?.id === id ? null : current);
       setVirtualConfigModal(null);
@@ -239,7 +281,14 @@ export default function Reports() {
   });
 
   const persistActiveVirtualCards = (cards: VirtualReportCardConfig[]) => {
-    if (!activeVirtualConfig || selectedSurveyIds.length < 2) return;
+    if (!isAdmin || !user || selectedSurveyIds.length < 2) return;
+    const selectionKey = virtualSelectionKey(selectedSurveyIds);
+    const pendingCreate = pendingVirtualCreatesRef.current.get(selectionKey);
+    if (pendingCreate) {
+      pendingCreate.cards = cards;
+      return;
+    }
+    if (!activeVirtualConfig) return;
     const sameOrder = activeVirtualConfig.pesquisa_ids.length === selectedSurveyIds.length
       && activeVirtualConfig.pesquisa_ids.every((id, index) => id === selectedSurveyIds[index]);
     if (!sameOrder) return;
@@ -248,6 +297,8 @@ export default function Reports() {
       nome: activeVirtualConfig.nome,
       pesquisa_ids: selectedSurveyIds,
       cards,
+      autoSave: true,
+      selectionKey,
     });
   };
 
@@ -362,15 +413,33 @@ export default function Reports() {
       const survey = surveys?.find(item => item.id === id);
       return survey ? [survey] : [];
     });
+    const selectionKey = virtualSelectionKey(nextIds);
     const savedConfig = nextIds.length > 1
       ? visibleVirtualConfigs.find(config => config.pesquisa_ids.length === nextIds.length && config.pesquisa_ids.every((id, index) => id === nextIds[index]))
+        || (activeVirtualConfig?.pesquisa_ids.length === nextIds.length && activeVirtualConfig.pesquisa_ids.every((id, index) => id === nextIds[index]) ? activeVirtualConfig : undefined)
       : undefined;
+    const pendingCreate = pendingVirtualCreatesRef.current.get(selectionKey);
+    const nextCards = savedConfig
+      ? configToVirtualCards(savedConfig)
+      : pendingCreate?.cards || buildInitialVirtualCards(nextSurveys);
+    currentSelectionKeyRef.current = selectionKey;
     setOpenVirtualMenuId(null);
     setSelectedSurveyIds(nextIds);
     setSelectedSurveyId(nextIds[0] || "");
-    setVirtualCards(savedConfig ? configToVirtualCards(savedConfig) : buildInitialVirtualCards(nextSurveys));
+    setVirtualCards(nextCards);
     setActiveVirtualConfig(savedConfig || null);
     setSurveySelectorOpen(false);
+    if (!savedConfig && !pendingCreate && nextIds.length > 1 && isAdmin && user) {
+      pendingVirtualCreatesRef.current.set(selectionKey, { cards: nextCards });
+      virtualConfigMutation.mutate({
+        nome: `Relatório virtual: ${nextSurveys.map(survey => survey.nome).join(" + ")}`,
+        pesquisa_ids: nextIds,
+        cards: nextCards,
+        autoSave: true,
+        autoCreate: true,
+        selectionKey,
+      });
+    }
   };
 
   const handleJoinVirtualCard = (ref: VirtualReportQuestionRef) => {
@@ -389,12 +458,6 @@ export default function Reports() {
     setVirtualNormalizeCard(null);
   };
 
-  const handleSaveVirtualConfig = () => {
-    if (!isAdmin || selectedSurveyIds.length < 2 || !user) return;
-    virtualConfigMutation.reset();
-    setVirtualConfigModal({ mode: "save", config: activeVirtualConfig || undefined });
-  };
-
   const handleConfirmVirtualConfig = (name?: string) => {
     if (!virtualConfigModal || !isAdmin || !user) return;
     if (virtualConfigModal.mode === "delete") {
@@ -409,6 +472,7 @@ export default function Reports() {
     const allowedIds = config.pesquisa_ids.filter(id => surveys?.some(survey => survey.id === id));
     const hasOnlyAllowedSources = config.cards.every(card => card.sources.every(source => allowedIds.includes(source.pesquisa_id)));
     if (allowedIds.length < 2 || allowedIds.length !== config.pesquisa_ids.length || (isClient && !hasOnlyAllowedSources)) return;
+    currentSelectionKeyRef.current = virtualSelectionKey(allowedIds);
     setSelectedSurveyIds(allowedIds);
     setSelectedSurveyId(allowedIds[0]);
     setVirtualCards(configToVirtualCards(config));
@@ -596,8 +660,8 @@ export default function Reports() {
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       <div className="bg-white dark:bg-slate-900 border border-outline rounded-[3rem] shadow-sm">
-        <div className="p-10 flex flex-col lg:flex-row lg:items-center justify-between gap-8">
-          <div className="flex-1 space-y-6">
+        <div className="space-y-8 p-10">
+          <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
                <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center text-primary">
                  <PieChartIcon size={24} />
@@ -607,7 +671,22 @@ export default function Reports() {
                  <p className="text-on-surface-variant font-medium text-sm">Visualização dinâmica dos dados coletados</p>
                </div>
             </div>
-            
+
+            <button
+              type="button"
+              onClick={handleExportPDF}
+              disabled={selectedSurveyIds.length > 1
+                ? !virtualReportCards.length || !allVirtualSubmissions.length
+                : !selectedSurvey || validSubmissions === undefined || validSubmissions.length === 0}
+              className="inline-flex items-center justify-center gap-3 px-6 py-4 bg-primary text-white rounded-2xl font-black shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none disabled:hover:scale-100"
+              title={selectedSurveyIds.length > 1 ? "Exportar visão combinada em PDF" : "Exportar relatório em PDF"}
+            >
+              <FileDown size={20} />
+              Exportar PDF
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-wrap items-center gap-4">
               <SurveySelectionControl
                 surveys={surveys || []}
@@ -631,8 +710,8 @@ export default function Reports() {
                     onClick={() => setChartType(type.id as ChartType)}
                     className={cn(
                       "p-3 rounded-xl transition-all flex items-center justify-center",
-                      chartType === type.id 
-                        ? "bg-white dark:bg-slate-900 text-primary shadow-md scale-110" 
+                      chartType === type.id
+                        ? "bg-white dark:bg-slate-900 text-primary shadow-md scale-110"
                         : "text-on-surface-variant opacity-40 hover:opacity-100"
                     )}
                     title={type.id}
@@ -641,29 +720,13 @@ export default function Reports() {
                   </button>
                 ))}
               </div>
-              <div className="min-w-[12rem] rounded-2xl border border-primary/15 bg-primary/5 px-4 py-3 text-center" aria-live="polite">
-                <p className="text-[10px] font-black uppercase tracking-widest text-primary">Pesquisas selecionadas</p>
-                <p className="mt-1 truncate text-sm font-black text-on-surface" title={selectedSurveys.map(survey => survey.nome).join(" · ") || "Nenhuma pesquisa selecionada"}>
-                  {selectedSurveyIds.length === 1 ? selectedSurveys[0]?.nome || "Nenhuma pesquisa selecionada" : selectedSurveyIds.length > 1 ? `${selectedSurveyIds.length} pesquisas selecionadas` : "Nenhuma pesquisa selecionada"}
-                </p>
-                <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Respostas válidas</p>
-                <p className="mt-1 text-xl font-black text-on-surface">{isSubmissionsLoading || isCombinedLoading ? "..." : (selectedSurveyIds.length > 1 ? allVirtualSubmissions.length : validSubmissions?.length || 0)}</p>
-              </div>
+            </div>
+
+            <div className="w-full rounded-2xl border border-primary/15 bg-primary/5 px-4 py-3 text-center sm:w-auto sm:min-w-[10rem]" aria-live="polite">
+              <p className="text-[10px] font-black uppercase tracking-widest text-primary">RESPOSTAS VÁLIDAS</p>
+              <p className="mt-1 text-xl font-black text-on-surface">{isSubmissionsLoading || isCombinedLoading ? "..." : (selectedSurveyIds.length > 1 ? allVirtualSubmissions.length : validSubmissions?.length || 0)}</p>
             </div>
           </div>
-
-          <button
-            type="button"
-            onClick={handleExportPDF}
-            disabled={selectedSurveyIds.length > 1
-              ? !virtualReportCards.length || !allVirtualSubmissions.length
-              : !selectedSurvey || validSubmissions === undefined || validSubmissions.length === 0}
-            className="inline-flex items-center justify-center gap-3 px-6 py-4 bg-primary text-white rounded-2xl font-black shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none disabled:hover:scale-100"
-            title={selectedSurveyIds.length > 1 ? "Exportar visão combinada em PDF" : "Exportar relatório em PDF"}
-          >
-            <FileDown size={20} />
-            Exportar PDF
-          </button>
         </div>
       </div>
 
@@ -686,7 +749,7 @@ export default function Reports() {
             </div>
           </section>}
           {selectedSurveyIds.length > 1 && <section className="space-y-6 rounded-[3rem] border border-primary/20 bg-primary/5 p-8" aria-label="Relatório combinado virtual">
-            <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="mt-1 text-2xl font-black text-on-surface">Pesquisas mescladas</h2></div><div className="flex flex-wrap gap-2">{isAdmin && <button type="button" onClick={handleSaveVirtualConfig} disabled={virtualConfigMutation.isPending} className="rounded-2xl bg-primary px-4 py-3 text-sm font-black text-white disabled:opacity-40">{virtualConfigMutation.isPending ? "Salvando..." : activeVirtualConfig ? "Atualizar configuração" : "Salvar configuração"}</button>}<span className="rounded-2xl border border-primary/20 bg-white px-4 py-3 text-xs font-black text-primary dark:bg-slate-900">{allVirtualSubmissions.length} respostas válidas somadas</span></div></div>
+            <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="mt-1 text-2xl font-black text-on-surface">Pesquisas mescladas</h2></div><div className="flex flex-wrap gap-2"><span className="rounded-2xl border border-primary/20 bg-white px-4 py-3 text-xs font-black text-primary dark:bg-slate-900">{allVirtualSubmissions.length} respostas válidas somadas</span></div></div>
             {visibleVirtualConfigs.length > 0 && <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-black text-on-surface-variant">Configurações:</span>{visibleVirtualConfigs.map(config => <span key={config.id} className="inline-flex items-center gap-1"><button type="button" onClick={() => handleLoadVirtualConfig(config)} className="rounded-xl border border-outline bg-white px-3 py-2 text-xs font-black text-on-surface hover:border-primary dark:bg-slate-900">{config.nome}</button>{isAdmin && <button type="button" onClick={() => handleDeleteVirtualConfig(config)} className="rounded-lg px-2 py-2 text-xs font-black text-rose-700 hover:bg-rose-50 dark:text-rose-300" aria-label={`Excluir ${config.nome}`}>×</button>}</span>)}</div>}
             {virtualConfigsLoading && <p className="text-xs font-bold text-on-surface-variant">Carregando configurações salvas...</p>}
             {virtualConfigMutation.error instanceof Error && <p role="alert" className="rounded-xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-800 dark:bg-rose-950/30 dark:text-rose-200">{virtualConfigMutation.error.message}</p>}

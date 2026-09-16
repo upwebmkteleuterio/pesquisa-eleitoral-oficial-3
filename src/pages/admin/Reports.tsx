@@ -19,6 +19,7 @@ import { VirtualReportCard } from "../../components/admin/VirtualReportCard";
 import { VirtualReportJoinModal } from "../../components/admin/VirtualReportJoinModal";
 import { VirtualReportNormalizeModal } from "../../components/admin/VirtualReportNormalizeModal";
 import { VirtualReportConfigModal } from "../../components/admin/VirtualReportConfigModal";
+import { SurveySelectionControl } from "../../components/admin/SurveySelectionControl";
 import type { ReportDemographicField, ReportMergeConfig, VirtualReportCardConfig, VirtualReportMergeConfig, VirtualReportQuestionRef } from "../../types";
 import { virtualReportMergeService } from "../../services/virtualReportMergeService";
 import { applyVirtualAnswerMappings, buildInitialVirtualCards, buildVirtualReportData, configToVirtualCards, getVirtualAnswerOptions, mergeVirtualCard, unmergeVirtualCard } from "../../utils/virtualReportUtils";
@@ -44,7 +45,7 @@ import {
 import { cn } from "../../lib/utils";
 import { generateReportPDF, generateReportMergesPDF } from "../../utils/pdfUtils";
 import { aggregateQuestionResponses } from "../../utils/responseNormalization";
-import { buildReportMergeCard, DEMOGRAPHIC_FIELD_LABELS } from "../../utils/reportMergeUtils";
+import { buildReportMergeCard, DEMOGRAPHIC_FIELD_LABELS, getDemographicValueLabel } from "../../utils/reportMergeUtils";
 
 const COLORS = ['#10b981', '#3b82f6', '#f43f5e', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#475569'];
 
@@ -54,15 +55,6 @@ const normalizeImageLabel = (value: string): string => value
   .toLocaleLowerCase('pt-BR')
   .replace(/\s+/g, ' ')
   .trim();
-
-const LABELS_MAP: Record<string, Record<string, string>> = {
-  sexo: { masculino: 'Masculino', feminino: 'Feminino', outro: 'Outro' },
-  faixa_etaria: { '16-24': '16-24 anos', '25-34': '25-34 anos', '35-44': '35-44 anos', '45-59': '45-59 anos', '60+': '60+ anos' },
-  renda: { 'ate_1sm': 'Até 1 SM', '1_2sm': '1-2 SM', '2_5sm': '2-5 SM', '5_10sm': '5-10 SM', 'mais_10sm': '+10 SM', 'sem_renda': 'S/ Renda' },
-  escolaridade: { 'analfabeto': 'Analfabeto', 'fund_incomp': 'Fund. Inc', 'fund_comp': 'Fund. Comp', 'medio_incomp': 'Médio Inc', 'medio_comp': 'Médio Comp', 'superior_incomp': 'Sup. Inc', 'superior_comp': 'Sup. Comp' },
-  religiao: { 'catolico': 'Católico', 'evangelico': 'Evangélico', 'espirita': 'Espírita', 'umbanda_candomble': 'Afro', 'outra': 'Outras', 'sem_religiao': 'Sem Religião' },
-  estado_civil: { 'solteiro': 'Solteiro', 'casado': 'Casado', 'divorciado': 'Divorciado', 'viuvo': 'Viúvo', 'uniao_estavel': 'U. Estável' }
-};
 
 type ChartType = 'horizontal' | 'vertical' | 'pie';
 
@@ -88,6 +80,12 @@ export default function Reports() {
     const id = searchParams.get('id');
     return id ? [id] : [];
   });
+  const [pendingSurveyIds, setPendingSurveyIds] = useState<string[]>(() => {
+    const id = searchParams.get('id');
+    return id ? [id] : [];
+  });
+  const [surveySelectorOpen, setSurveySelectorOpen] = useState(false);
+  const [openVirtualMenuId, setOpenVirtualMenuId] = useState<string | null>(null);
   const [virtualCards, setVirtualCards] = useState<VirtualReportCardConfig[]>([]);
   const [virtualJoinCard, setVirtualJoinCard] = useState<VirtualReportCardConfig | null>(null);
   const [virtualNormalizeCard, setVirtualNormalizeCard] = useState<VirtualReportCardConfig | null>(null);
@@ -126,6 +124,16 @@ export default function Reports() {
       return profile?.role === 'cliente' && surveys[0] ? [surveys[0].id] : [];
     });
   }, [searchParams, surveys, profile?.role]);
+
+  useEffect(() => {
+    if (!openVirtualMenuId) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element) || !target.closest('[data-virtual-menu]')) setOpenVirtualMenuId(null);
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [openVirtualMenuId]);
 
   const selectedSurveys = useMemo(
     () => selectedSurveyIds.flatMap(id => {
@@ -327,13 +335,28 @@ export default function Reports() {
     if (selectedSurvey && reportMergeCards.length > 0) generateReportMergesPDF(selectedSurvey, reportMergeCards);
   };
 
-  const handleSurveySelection = (surveyId: string) => {
+  const handleOpenSurveySelection = () => {
+    setPendingSurveyIds(selectedSurveyIds);
+    setSurveySelectorOpen(true);
+  };
+
+  const handleTogglePendingSurvey = (surveyId: string) => {
+    setPendingSurveyIds(current => current.includes(surveyId)
+      ? current.filter(id => id !== surveyId)
+      : [...current, surveyId]);
+  };
+
+  const handleCancelSurveySelection = () => {
+    setSurveySelectorOpen(false);
+    setPendingSurveyIds(selectedSurveyIds);
+  };
+
+  const handleConfirmSurveySelection = () => {
     setActiveVirtualConfig(null);
-    setSelectedSurveyIds(current => {
-      const next = current.includes(surveyId) ? current.filter(id => id !== surveyId) : [...current, surveyId];
-      setSelectedSurveyId(next[0] || "");
-      return next;
-    });
+    setOpenVirtualMenuId(null);
+    setSelectedSurveyIds(pendingSurveyIds);
+    setSelectedSurveyId(pendingSurveyIds[0] || "");
+    setSurveySelectorOpen(false);
   };
 
   const handleJoinVirtualCard = (ref: VirtualReportQuestionRef) => {
@@ -419,10 +442,12 @@ export default function Reports() {
         const val = sub.dados_fixos[key];
         if (val) counts[val] = (counts[val] || 0) + 1;
       });
-      demographicData[key] = Object.entries(counts).map(([name, value]) => ({ 
-        name: LABELS_MAP[key]?.[name] || name, 
-        value 
-      }));
+      const readableCounts: Record<string, number> = {};
+      Object.entries(counts).forEach(([name, value]) => {
+        const readableName = getDemographicValueLabel(key as ReportDemographicField, name);
+        readableCounts[readableName] = (readableCounts[readableName] || 0) + value;
+      });
+      demographicData[key] = Object.entries(readableCounts).map(([name, value]) => ({ name, value }));
     });
 
     if (selectedSurveyIds.length === 1) {
@@ -544,7 +569,7 @@ export default function Reports() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
-      <div className="bg-white dark:bg-slate-900 border border-outline rounded-[3rem] shadow-sm overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 border border-outline rounded-[3rem] shadow-sm">
         <div className="p-10 flex flex-col lg:flex-row lg:items-center justify-between gap-8">
           <div className="flex-1 space-y-6">
             <div className="flex items-center gap-3">
@@ -558,16 +583,16 @@ export default function Reports() {
             </div>
             
             <div className="flex flex-wrap items-center gap-4">
-              <fieldset className="min-w-0 flex-1 space-y-2 lg:max-w-2xl"><legend className="text-[10px] font-black uppercase tracking-widest text-primary">Pesquisas do resultado ({selectedSurveyIds.length})</legend>
-                <div className="grid max-h-40 grid-cols-1 gap-2 overflow-y-auto rounded-2xl border-2 border-outline bg-slate-50 p-2 sm:grid-cols-2 dark:bg-slate-800" aria-label="Selecionar múltiplas pesquisas">
-                  {surveys?.map(survey => {
-                    const selected = selectedSurveyIds.includes(survey.id);
-                    return <button type="button" key={survey.id} onClick={() => handleSurveySelection(survey.id)} aria-pressed={selected} className={cn("flex min-h-12 items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left text-xs font-black transition", selected ? "border-primary bg-primary text-white shadow-sm" : "border-transparent bg-white text-on-surface hover:border-primary/40 dark:bg-slate-900")}>{survey.nome}<span className={cn("flex h-5 w-5 shrink-0 items-center justify-center rounded-md border", selected ? "border-white bg-white text-primary" : "border-outline text-transparent")} aria-hidden="true">✓</span></button>;
-                  })}
-                  {!surveys?.length && <p className="p-3 text-xs font-bold text-on-surface-variant">Nenhuma pesquisa disponível.</p>}
-                </div>
-              </fieldset>
-              <div className="flex flex-wrap gap-2">{selectedSurveys.map(survey => <button type="button" key={survey.id} onClick={() => handleSurveySelection(survey.id)} className="rounded-xl bg-primary/10 px-3 py-2 text-xs font-black text-primary" title="Remover pesquisa">{survey.nome} ×</button>)}</div>
+              <SurveySelectionControl
+                surveys={surveys || []}
+                selectedSurveyIds={selectedSurveyIds}
+                pendingSurveyIds={pendingSurveyIds}
+                isOpen={surveySelectorOpen}
+                onOpen={handleOpenSurveySelection}
+                onToggle={handleTogglePendingSurvey}
+                onCancel={handleCancelSurveySelection}
+                onConfirm={handleConfirmSurveySelection}
+              />
 
               <div className="flex bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl border border-outline">
                 {[
@@ -590,8 +615,12 @@ export default function Reports() {
                   </button>
                 ))}
               </div>
-              <div className="rounded-2xl border border-primary/15 bg-primary/5 px-4 py-3 text-center" aria-live="polite">
-                <p className="text-[10px] font-black uppercase tracking-widest text-primary">Total de respostas válidas</p>
+              <div className="min-w-[12rem] rounded-2xl border border-primary/15 bg-primary/5 px-4 py-3 text-center" aria-live="polite">
+                <p className="text-[10px] font-black uppercase tracking-widest text-primary">Pesquisas selecionadas</p>
+                <p className="mt-1 truncate text-sm font-black text-on-surface" title={selectedSurveys.map(survey => survey.nome).join(" · ") || "Nenhuma pesquisa selecionada"}>
+                  {selectedSurveyIds.length === 1 ? selectedSurveys[0]?.nome || "Nenhuma pesquisa selecionada" : selectedSurveyIds.length > 1 ? `${selectedSurveyIds.length} pesquisas selecionadas` : "Nenhuma pesquisa selecionada"}
+                </p>
+                <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Respostas válidas</p>
                 <p className="mt-1 text-xl font-black text-on-surface">{isSubmissionsLoading || isCombinedLoading ? "..." : (selectedSurveyIds.length > 1 ? allVirtualSubmissions.length : validSubmissions?.length || 0)}</p>
               </div>
             </div>
@@ -614,15 +643,29 @@ export default function Reports() {
 
       {selectedSurveyId ? (
         <div className="space-y-12">
+          {selectedSurveyIds.length > 1 && stats && <section className="bg-white dark:bg-slate-900 p-12 rounded-[3.5rem] border border-outline shadow-sm space-y-12" aria-label="Perfil demográfico consolidado">
+            <div className="flex items-center gap-3">
+              <Users className="text-primary" size={28} />
+              <h3 className="text-2xl font-black text-on-surface tracking-tight">Perfil Demográfico consolidado</h3>
+            </div>
+            <div className="grid grid-cols-1 gap-x-12 gap-y-16 md:grid-cols-2 xl:grid-cols-3">
+              {(Object.entries(stats.demographicData) as [string, any[]][]).map(([key, data]) => (
+                <div key={key} className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="border-b-2 border-primary/10 pb-3"><h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-primary">{DEMOGRAPHIC_FIELD_LABELS[key as ReportDemographicField]}</h4></div>
+                  {renderChart(data)}
+                </div>
+              ))}
+            </div>
+          </section>}
           {selectedSurveyIds.length > 1 && <section className="space-y-6 rounded-[3rem] border border-primary/20 bg-primary/5 p-8" aria-label="Relatório combinado virtual">
             <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-[10px] font-black uppercase tracking-widest text-primary">Resultado combinado imediato</p><h2 className="mt-1 text-2xl font-black text-on-surface">Pesquisas mescladas virtualmente</h2><p className="mt-2 text-sm font-bold text-on-surface-variant">Cards intercalados por posição. Nada é alterado nas pesquisas, entrevistas ou respostas físicas.</p></div><div className="flex flex-wrap gap-2">{isAdmin && <button type="button" onClick={handleSaveVirtualConfig} disabled={virtualConfigMutation.isPending} className="rounded-2xl bg-primary px-4 py-3 text-sm font-black text-white disabled:opacity-40">{virtualConfigMutation.isPending ? "Salvando..." : activeVirtualConfig ? "Atualizar configuração" : "Salvar configuração"}</button>}<span className="rounded-2xl border border-primary/20 bg-white px-4 py-3 text-xs font-black text-primary dark:bg-slate-900">{allVirtualSubmissions.length} respostas válidas somadas</span></div></div>
             {visibleVirtualConfigs.length > 0 && <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-black text-on-surface-variant">Configurações:</span>{visibleVirtualConfigs.map(config => <span key={config.id} className="inline-flex items-center gap-1"><button type="button" onClick={() => handleLoadVirtualConfig(config)} className="rounded-xl border border-outline bg-white px-3 py-2 text-xs font-black text-on-surface hover:border-primary dark:bg-slate-900">{config.nome}</button>{isAdmin && <button type="button" onClick={() => handleDeleteVirtualConfig(config)} className="rounded-lg px-2 py-2 text-xs font-black text-rose-700 hover:bg-rose-50 dark:text-rose-300" aria-label={`Excluir ${config.nome}`}>×</button>}</span>)}</div>}
             {virtualConfigsLoading && <p className="text-xs font-bold text-on-surface-variant">Carregando configurações salvas...</p>}
             {virtualConfigMutation.error instanceof Error && <p role="alert" className="rounded-xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-800 dark:bg-rose-950/30 dark:text-rose-200">{virtualConfigMutation.error.message}</p>}
             {virtualDeleteMutation.error instanceof Error && <p role="alert" className="rounded-xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-800 dark:bg-rose-950/30 dark:text-rose-200">{virtualDeleteMutation.error.message}</p>}
-            <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">{virtualReportCards.map(card => <div key={card.config.id}><VirtualReportCard card={card} isAdmin={isAdmin} onJoin={setVirtualJoinCard} onNormalize={setVirtualNormalizeCard} onUndo={handleUndoVirtualJoin} /></div>)}</div>
+            <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">{virtualReportCards.map(card => <div key={card.config.id}><VirtualReportCard card={card} isAdmin={isAdmin} isMenuOpen={openVirtualMenuId === card.config.id} onToggleMenu={() => setOpenVirtualMenuId(current => current === card.config.id ? null : card.config.id)} onCloseMenu={() => setOpenVirtualMenuId(null)} onJoin={setVirtualJoinCard} onNormalize={setVirtualNormalizeCard} onUndo={handleUndoVirtualJoin} /></div>)}</div>
           </section>}
-          {stats ? (
+          {selectedSurveyIds.length === 1 && stats ? (
             <section className="bg-white dark:bg-slate-900 p-12 rounded-[3.5rem] border border-outline shadow-sm space-y-12">
               <div className="flex items-center gap-3">
                 <Users className="text-primary" size={28} />
@@ -631,7 +674,7 @@ export default function Reports() {
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-y-16 gap-x-12">
                 {(Object.entries(stats.demographicData) as [string, any[]][]).map(([key, data]) => (
                   <div key={key} className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    <div className="border-b-2 border-primary/10 pb-3"><h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-primary">{key.replace('_', ' ')}</h4></div>
+                    <div className="border-b-2 border-primary/10 pb-3"><h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-primary">{DEMOGRAPHIC_FIELD_LABELS[key as ReportDemographicField]}</h4></div>
                     {renderChart(data)}
                   </div>
                 ))}
@@ -678,6 +721,11 @@ export default function Reports() {
           )}
         </div>
       ) : null}
+
+      {!selectedSurveyId && <div className="rounded-[3rem] border border-dashed border-outline bg-white py-20 text-center dark:bg-slate-900">
+        <p className="text-lg font-black text-on-surface">Nenhuma pesquisa selecionada</p>
+        <p className="mt-2 text-sm font-bold text-on-surface-variant">Abra o seletor acima e confirme uma ou mais pesquisas para visualizar o relatório.</p>
+      </div>}
 
       <ReportMergeModal
         isOpen={isAdmin && reportMergeModalOpen}

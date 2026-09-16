@@ -13,15 +13,30 @@ export const DEMOGRAPHIC_FIELD_LABELS: Record<ReportDemographicField, string> = 
 const DEMOGRAPHIC_VALUE_LABELS: Record<ReportDemographicField, Record<string, string>> = {
   sexo: { masculino: "Masculino", feminino: "Feminino", outro: "Outro" },
   faixa_etaria: { "16-24": "16-24 anos", "25-34": "25-34 anos", "35-44": "35-44 anos", "45-59": "45-59 anos", "60+": "60+ anos" },
-  renda: { ate_1sm: "Até 1 SM", "1_2sm": "1-2 SM", "2_5sm": "2-5 SM", "5_10sm": "5-10 SM", mais_10sm: "+10 SM", sem_renda: "S/ Renda" },
-  escolaridade: { analfabeto: "Analfabeto", fund_incomp: "Fund. Inc", fund_comp: "Fund. Comp", medio_incomp: "Médio Inc", medio_comp: "Médio Comp", superior_incomp: "Sup. Inc", superior_comp: "Sup. Comp" },
-  religiao: { catolico: "Católico", evangelico: "Evangélico", espirita: "Espírita", umbanda_candomble: "Afro", outra: "Outras", sem_religiao: "Sem Religião" },
-  estado_civil: { solteiro: "Solteiro", casado: "Casado", divorciado: "Divorciado", viuvo: "Viúvo", uniao_estavel: "U. Estável" },
+  renda: { ate_1sm: "Até 1 SM", "1_2sm": "1-2 SM", "2_5sm": "2-5 SM", "5_10sm": "5-10 SM", mais_10sm: "+10 SM", sem_renda: "Sem renda" },
+  escolaridade: {
+    analfabeto: "Analfabeto",
+    fundamental_inc: "Fundamental incompleto",
+    fund_incomp: "Fundamental incompleto",
+    fundamental_comp: "Fundamental completo",
+    fund_comp: "Fundamental completo",
+    medio_inc: "Médio incompleto",
+    medio_incomp: "Médio incompleto",
+    medio_comp: "Médio completo",
+    superior_inc: "Superior incompleto",
+    superior_incomp: "Superior incompleto",
+    superior_comp: "Superior completo",
+  },
+  religiao: { catolico: "Católico", evangelico: "Evangélico", espirita: "Espírita", umbanda_candomble: "Umbanda/Candomblé", outra: "Outra", sem_religiao: "Sem religião" },
+  estado_civil: { solteiro: "Solteiro", casado: "Casado", divorciado: "Divorciado", viuvo: "Viúvo", uniao_estavel: "União estável" },
 };
 
 export const getDemographicValueLabel = (field: ReportDemographicField, value: unknown): string => {
   if (typeof value !== "string" || !value.trim()) return "Não informado";
-  return DEMOGRAPHIC_VALUE_LABELS[field]?.[value] || value;
+  const normalizedValue = value.trim().toLocaleLowerCase("pt-BR");
+  const mappedValue = DEMOGRAPHIC_VALUE_LABELS[field]?.[normalizedValue];
+  if (mappedValue) return mappedValue;
+  return normalizedValue.replace(/_/g, " ").replace(/^(.)/, character => character.toLocaleUpperCase("pt-BR"));
 };
 
 const answerValues = (value: unknown): unknown[] => {

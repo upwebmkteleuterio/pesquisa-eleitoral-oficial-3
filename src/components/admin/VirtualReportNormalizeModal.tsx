@@ -24,9 +24,13 @@ export function VirtualReportNormalizeModal({ isOpen, card, options, onClose, on
   const selectedOptions = options.filter(option => selectedKeys.includes(option.key));
   const selectedResponseCount = selectedOptions.reduce((total, option) => total + option.count, 0);
   const canConfirm = label.trim().length > 0 && selectedKeys.length > 0;
-  const toggleOption = (key: string) => setSelectedKeys(current => current.includes(key)
-    ? current.filter(item => item !== key)
-    : [...current, key]);
+  const toggleOption = (key: string) => {
+    const isSelected = selectedKeys.includes(key);
+    if (!isSelected && key === options[0]?.key && label.trim().length === 0) setLabel(options[0].value);
+    setSelectedKeys(current => current.includes(key)
+      ? current.filter(item => item !== key)
+      : [...current, key]);
+  };
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canConfirm) return;

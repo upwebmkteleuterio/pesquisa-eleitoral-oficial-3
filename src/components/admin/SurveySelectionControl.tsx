@@ -62,7 +62,7 @@ export function SurveySelectionControl({
                   <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${selected ? "border-primary bg-primary text-white" : "border-outline text-transparent"}`} aria-hidden="true">
                     <Check size={14} strokeWidth={3} />
                   </span>
-                  <span className="min-w-0 truncate">{survey.nome}</span>
+                  <span className="min-w-0 truncate" title={survey.nome}>{survey.nome}</span>
                 </label>
               );
             })}

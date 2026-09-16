@@ -26,7 +26,7 @@ export function VirtualReportCard({ card, isAdmin, isMenuOpen, onToggleMenu, onC
             <span className="rounded-lg bg-primary/10 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-primary">Card virtual</span>
             {isJoined && <span className="rounded-lg bg-violet-100 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">{card.config.sources.length} fontes unificadas</span>}
           </div>
-          <h3 className="truncate text-lg font-black text-on-surface" title={title}>{title}</h3>
+          <h3 className="min-h-[3.5rem] break-words text-lg font-black leading-7 text-on-surface" title={title}>{title}</h3>
           <p className="mt-1 truncate text-xs font-bold text-on-surface-variant" title={sourceLabel}>{sourceLabel} · {card.totalResponses} entrevistas · {card.totalAnswers} respostas somadas</p>
         </div>
         {isAdmin && <div className="relative shrink-0" data-virtual-menu>

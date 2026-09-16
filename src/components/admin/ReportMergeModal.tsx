@@ -47,7 +47,7 @@ export function ReportMergeModal({
         <div className="flex items-start justify-between gap-4 border-b border-outline p-6">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary"><GitMerge size={22} /></div>
-            <div><h2 id="report-merge-title" className="text-xl font-black text-on-surface">Mesclar dados</h2><p className="mt-1 text-xs font-bold text-on-surface-variant">Cruze uma pergunta com um dado demográfico</p></div>
+            <div><h2 id="report-merge-title" className="text-xl font-black text-on-surface">Cruzar por demografia</h2><p className="mt-1 text-xs font-bold text-on-surface-variant">Cruze uma pergunta com um dado demográfico</p></div>
           </div>
           <button type="button" onClick={onClose} className="rounded-xl p-2 text-on-surface-variant hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Cancelar"><X size={22} /></button>
         </div>

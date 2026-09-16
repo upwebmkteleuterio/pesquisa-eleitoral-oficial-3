@@ -150,3 +150,40 @@ export interface ReportMergeCardData {
   totalAnswers: number;
   answers: ReportMergeAnswer[];
 }
+
+export interface VirtualReportQuestionRef {
+  pesquisa_id: string;
+  pergunta_id: string;
+}
+
+export interface VirtualReportCardConfig {
+  id: string;
+  position: number;
+  sources: VirtualReportQuestionRef[];
+  response_mappings?: Record<string, string>;
+}
+
+export interface VirtualReportMergeConfig {
+  id: string;
+  nome: string;
+  pesquisa_ids: string[];
+  cards: VirtualReportCardConfig[];
+  criado_por?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VirtualReportAnswer {
+  label: string;
+  total: number;
+  percentage: number;
+}
+
+export interface VirtualReportCardData {
+  config: VirtualReportCardConfig;
+  questionLabels: string[];
+  surveyNames: string[];
+  totalResponses: number;
+  totalAnswers: number;
+  answers: VirtualReportAnswer[];
+}

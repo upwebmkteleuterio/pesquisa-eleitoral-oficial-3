@@ -77,7 +77,7 @@ export function ResponseMergeModal({
               <GitMerge size={22} />
             </div>
             <div>
-              <h2 id="response-merge-title" className="text-xl font-black text-on-surface">Mesclar respostas</h2>
+              <h2 id="response-merge-title" className="text-xl font-black text-on-surface">Padronizar respostas</h2>
               <p className="mt-1 text-xs font-bold text-on-surface-variant">{questionLabel}</p>
             </div>
           </div>

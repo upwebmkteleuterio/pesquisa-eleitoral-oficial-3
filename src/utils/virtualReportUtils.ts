@@ -2,14 +2,20 @@ import type {
   Submission,
   Survey,
   VirtualReportAnswer,
+  VirtualReportAnswerOption,
   VirtualReportCardConfig,
   VirtualReportCardData,
   VirtualReportMergeConfig,
+  VirtualReportOptionGroup,
+  VirtualReportOptionRef,
   VirtualReportQuestionRef,
 } from "../types";
 
 export const virtualQuestionKey = ({ pesquisa_id, pergunta_id }: VirtualReportQuestionRef) =>
   `${pesquisa_id}:${pergunta_id}`;
+
+export const virtualOptionKey = ({ pesquisa_id, pergunta_id, valor }: VirtualReportOptionRef) =>
+  `${virtualQuestionKey({ pesquisa_id, pergunta_id })}:${valor}`;
 
 const questionLabel = (survey: Survey | undefined, questionId: string) =>
   survey?.schema_dinamico?.questions?.find((question: any) => question.id === questionId)?.label || questionId;
@@ -20,7 +26,7 @@ const normalizeCards = (cards: VirtualReportCardConfig[]) => cards.map((card, in
   ...card,
   position: index,
   sources: card.sources || [],
-  response_mappings: card.response_mappings || {},
+  option_groups: (card.option_groups || []).filter(group => group.label?.trim() && group.options?.length),
 }));
 
 export const buildInitialVirtualCards = (surveys: Survey[]): VirtualReportCardConfig[] => {
@@ -34,7 +40,7 @@ export const buildInitialVirtualCards = (surveys: Survey[]): VirtualReportCardCo
           id: `virtual:${survey.id}:${question.id}`,
           position: cards.length,
           sources: [{ pesquisa_id: survey.id, pergunta_id: question.id }],
-          response_mappings: {},
+          option_groups: [],
         });
       }
     });
@@ -56,12 +62,16 @@ export const mergeVirtualCard = (
   const sourcesToAdd = sourceCard && sourceCard.id !== cardId
     ? sourceCard.sources.filter(source => !targetKeys.has(virtualQuestionKey(source)))
     : [joined];
+  const groups = [
+    ...(target.option_groups || []),
+    ...(sourceCard && sourceCard.id !== cardId ? sourceCard.option_groups || [] : []),
+  ];
 
   return normalizeCards(
     cards
       .filter(card => card.id === cardId || !card.sources.some(source => virtualQuestionKey(source) === joinedKey))
       .map(card => card.id === cardId
-        ? { ...card, sources: [...card.sources, ...sourcesToAdd], response_mappings: { ...(sourceCard?.response_mappings || {}), ...(card.response_mappings || {}) } }
+        ? { ...card, sources: [...card.sources, ...sourcesToAdd], option_groups: groups }
         : card),
   );
 };
@@ -79,7 +89,7 @@ export const unmergeVirtualCard = (
   const restored = target.sources
     .map(source => baseByKey.get(virtualQuestionKey(source)))
     .filter(Boolean)
-    .map(card => ({ ...card, response_mappings: {} })) as VirtualReportCardConfig[];
+    .map(card => ({ ...card, option_groups: [] })) as VirtualReportCardConfig[];
   const withoutTarget = cards.filter(card => card.id !== cardId);
   const combined = [...withoutTarget, ...restored];
   const positions = new Map(base.map(card => [virtualQuestionKey(card.sources[0]), card.position]));
@@ -102,21 +112,50 @@ const rawValues = (value: unknown): string[] => {
 const valuesFor = (ref: VirtualReportQuestionRef, submissions: Submission[] | undefined) =>
   (submissions || []).flatMap(submission => rawValues(submission.respostas_dinamicas?.[ref.pergunta_id]));
 
+const legacyGroups = (card: VirtualReportCardConfig): VirtualReportOptionGroup[] =>
+  Object.entries(card.response_mappings || {}).map(([value, label], index) => ({
+    id: `legacy:${card.id}:${index}`,
+    label,
+    options: card.sources.map(source => ({ ...source, valor: value })),
+  }));
+
+const cardGroups = (card: VirtualReportCardConfig) => [
+  ...(card.option_groups || []),
+  ...legacyGroups(card),
+];
+
 export const buildVirtualReportCard = (
   card: VirtualReportCardConfig,
   surveys: Survey[],
   submissionsBySurvey: Record<string, Submission[] | undefined>,
 ): VirtualReportCardData => {
   const sources = card.sources || [];
-  const mappings = card.response_mappings || {};
+  const groups = cardGroups(card);
+  const groupLabels = new Map<string, string>();
+  groups.forEach(group => group.options.forEach(option => groupLabels.set(virtualOptionKey(option), group.label)));
   const counts = new Map<string, number>();
+  const optionKeysByValue = new Map<string, Set<string>>();
   const sourceSurveyNames = new Set<string>();
 
   sources.forEach(ref => {
     const survey = surveys.find(item => item.id === ref.pesquisa_id);
     if (survey) sourceSurveyNames.add(survey.nome);
-    valuesFor(ref, submissionsBySurvey[ref.pesquisa_id]).forEach(raw => {
-      const label = mappings[raw] || raw;
+    valuesFor(ref, submissionsBySurvey[ref.pesquisa_id]).forEach(value => {
+      const key = virtualOptionKey({ ...ref, valor: value });
+      const keys = optionKeysByValue.get(value) || new Set<string>();
+      keys.add(key);
+      optionKeysByValue.set(value, keys);
+    });
+  });
+
+  sources.forEach(ref => {
+    const survey = surveys.find(item => item.id === ref.pesquisa_id);
+    valuesFor(ref, submissionsBySurvey[ref.pesquisa_id]).forEach(value => {
+      const optionKey = virtualOptionKey({ ...ref, valor: value });
+      const groupLabel = groupLabels.get(optionKey);
+      const label = groupLabel || (optionKeysByValue.get(value)?.size === 1
+        ? value
+        : `${survey?.nome || ref.pesquisa_id} · ${questionLabel(survey, ref.pergunta_id)}: ${value}`);
       counts.set(label, (counts.get(label) || 0) + 1);
     });
   });
@@ -146,16 +185,43 @@ export const getVirtualAnswerOptions = (
   card: VirtualReportCardConfig,
   surveys: Survey[],
   submissionsBySurvey: Record<string, Submission[] | undefined>,
-): string[] => {
-  const options = card.sources.flatMap(ref => valuesFor(ref, submissionsBySurvey[ref.pesquisa_id]));
-  return Array.from(new Set(options)).sort((left, right) => left.localeCompare(right, "pt-BR"));
+): VirtualReportAnswerOption[] => {
+  const options = new Map<string, VirtualReportAnswerOption>();
+  card.sources.forEach(ref => {
+    const survey = surveys.find(item => item.id === ref.pesquisa_id);
+    const question = questionLabel(survey, ref.pergunta_id);
+    valuesFor(ref, submissionsBySurvey[ref.pesquisa_id]).forEach(value => {
+      const key = virtualOptionKey({ ...ref, valor: value });
+      const current = options.get(key);
+      options.set(key, {
+        key,
+        value,
+        count: (current?.count || 0) + 1,
+        sourceLabel: survey?.nome || ref.pesquisa_id,
+        questionLabel: question,
+        ref: { ...ref, valor: value },
+      });
+    });
+  });
+  return Array.from(options.values()).sort((left, right) => right.count - left.count || left.value.localeCompare(right.value, "pt-BR"));
 };
 
-export const applyVirtualAnswerMappings = (
+export const applyVirtualAnswerGroup = (
   cards: VirtualReportCardConfig[],
   cardId: string,
-  mappings: Record<string, string>,
-) => cards.map(card => card.id === cardId ? { ...card, response_mappings: mappings } : card);
+  group: VirtualReportOptionGroup,
+) => cards.map(card => {
+  if (card.id !== cardId) return card;
+  const selectedKeys = new Set(group.options.map(option => virtualOptionKey(option)));
+  const optionGroups = (cardGroups(card) || [])
+    .map(existing => ({ ...existing, options: existing.options.filter(option => !selectedKeys.has(virtualOptionKey(option))) }))
+    .filter(existing => existing.options.length);
+  return { ...card, option_groups: [...optionGroups, group], response_mappings: undefined };
+});
 
 export const configToVirtualCards = (config: VirtualReportMergeConfig) =>
-  normalizeCards(config.cards);
+  normalizeCards(config.cards).map(card => ({
+    ...card,
+    option_groups: cardGroups(card),
+    response_mappings: undefined,
+  }));

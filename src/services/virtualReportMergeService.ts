@@ -1,5 +1,6 @@
 import { supabase } from "@/src/integrations/supabase/client";
 import type { VirtualReportMergeConfig } from "../types";
+import { configToVirtualCards } from "../utils/virtualReportUtils";
 
 export interface VirtualReportMergeInput {
   nome: string;
@@ -19,7 +20,10 @@ const listVirtualReportMerges = async (): Promise<VirtualReportMergeConfig[]> =>
     .select("*")
     .order("updated_at", { ascending: false });
   if (error) throw friendlyError(error);
-  return (data || []) as VirtualReportMergeConfig[];
+  return (data || []).map(config => ({
+    ...(config as VirtualReportMergeConfig),
+    cards: configToVirtualCards(config as VirtualReportMergeConfig),
+  }));
 };
 
 const createVirtualReportMerge = async (input: VirtualReportMergeInput) => {

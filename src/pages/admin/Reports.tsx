@@ -20,9 +20,9 @@ import { VirtualReportJoinModal } from "../../components/admin/VirtualReportJoin
 import { VirtualReportNormalizeModal } from "../../components/admin/VirtualReportNormalizeModal";
 import { VirtualReportConfigModal } from "../../components/admin/VirtualReportConfigModal";
 import { SurveySelectionControl } from "../../components/admin/SurveySelectionControl";
-import type { ReportDemographicField, ReportMergeConfig, VirtualReportCardConfig, VirtualReportMergeConfig, VirtualReportQuestionRef } from "../../types";
+import type { ReportDemographicField, ReportMergeConfig, VirtualReportCardConfig, VirtualReportMergeConfig, VirtualReportOptionGroup, VirtualReportQuestionRef } from "../../types";
 import { virtualReportMergeService } from "../../services/virtualReportMergeService";
-import { applyVirtualAnswerMappings, buildInitialVirtualCards, buildVirtualReportData, configToVirtualCards, getVirtualAnswerOptions, mergeVirtualCard, unmergeVirtualCard } from "../../utils/virtualReportUtils";
+import { applyVirtualAnswerGroup, buildInitialVirtualCards, buildVirtualReportData, configToVirtualCards, getVirtualAnswerOptions, mergeVirtualCard, unmergeVirtualCard } from "../../utils/virtualReportUtils";
 import {
   PieChart as PieChartIcon,
   BarChart as BarChartIcon, Users,
@@ -43,7 +43,7 @@ import {
   Legend
 } from 'recharts';
 import { cn } from "../../lib/utils";
-import { generateReportPDF, generateReportMergesPDF } from "../../utils/pdfUtils";
+import { generateReportPDF, generateReportMergesPDF, generateVirtualReportPDF } from "../../utils/pdfUtils";
 import { aggregateQuestionResponses } from "../../utils/responseNormalization";
 import { buildReportMergeCard, DEMOGRAPHIC_FIELD_LABELS, getDemographicValueLabel } from "../../utils/reportMergeUtils";
 
@@ -216,14 +216,6 @@ export default function Reports() {
       && config.cards.every(card => card.sources.every(source => allowedSurveyIds.has(source.pesquisa_id))),
     );
   }, [isClient, surveys, virtualConfigs]);
-  const virtualExcludedQuestionKeys = useMemo(
-    () => virtualJoinCard
-      ? virtualCards
-        .filter(card => card.id !== virtualJoinCard.id)
-        .flatMap(card => card.sources.map(source => `${source.pesquisa_id}:${source.pergunta_id}`))
-      : [],
-    [virtualCards, virtualJoinCard],
-  );
   const virtualConfigMutation = useMutation({
     mutationFn: (input: { id?: string; nome: string; pesquisa_ids: string[]; cards: VirtualReportCardConfig[] }) => {
       const { id, ...configInput } = input;
@@ -245,6 +237,19 @@ export default function Reports() {
       await queryClient.invalidateQueries({ queryKey: ['virtual-report-merges'] });
     },
   });
+
+  const persistActiveVirtualCards = (cards: VirtualReportCardConfig[]) => {
+    if (!activeVirtualConfig || selectedSurveyIds.length < 2) return;
+    const sameOrder = activeVirtualConfig.pesquisa_ids.length === selectedSurveyIds.length
+      && activeVirtualConfig.pesquisa_ids.every((id, index) => id === selectedSurveyIds[index]);
+    if (!sameOrder) return;
+    virtualConfigMutation.mutate({
+      id: activeVirtualConfig.id,
+      nome: activeVirtualConfig.nome,
+      pesquisa_ids: selectedSurveyIds,
+      cards,
+    });
+  };
 
   const validSubmissions = useMemo(
     () => submissions?.filter(submission => submission.valida !== false),
@@ -352,22 +357,35 @@ export default function Reports() {
   };
 
   const handleConfirmSurveySelection = () => {
-    setActiveVirtualConfig(null);
+    const nextIds = [...pendingSurveyIds];
+    const nextSurveys = nextIds.flatMap(id => {
+      const survey = surveys?.find(item => item.id === id);
+      return survey ? [survey] : [];
+    });
+    const savedConfig = nextIds.length > 1
+      ? visibleVirtualConfigs.find(config => config.pesquisa_ids.length === nextIds.length && config.pesquisa_ids.every((id, index) => id === nextIds[index]))
+      : undefined;
     setOpenVirtualMenuId(null);
-    setSelectedSurveyIds(pendingSurveyIds);
-    setSelectedSurveyId(pendingSurveyIds[0] || "");
+    setSelectedSurveyIds(nextIds);
+    setSelectedSurveyId(nextIds[0] || "");
+    setVirtualCards(savedConfig ? configToVirtualCards(savedConfig) : buildInitialVirtualCards(nextSurveys));
+    setActiveVirtualConfig(savedConfig || null);
     setSurveySelectorOpen(false);
   };
 
   const handleJoinVirtualCard = (ref: VirtualReportQuestionRef) => {
     if (!virtualJoinCard) return;
-    setVirtualCards(current => mergeVirtualCard(current, virtualJoinCard.id, ref));
+    const nextCards = mergeVirtualCard(virtualCards, virtualJoinCard.id, ref);
+    setVirtualCards(nextCards);
+    persistActiveVirtualCards(nextCards);
     setVirtualJoinCard(null);
   };
 
-  const handleNormalizeVirtualCard = (mappings: Record<string, string>) => {
+  const handleNormalizeVirtualCard = (group: VirtualReportOptionGroup) => {
     if (!virtualNormalizeCard) return;
-    setVirtualCards(current => applyVirtualAnswerMappings(current, virtualNormalizeCard.id, mappings));
+    const nextCards = applyVirtualAnswerGroup(virtualCards, virtualNormalizeCard.id, group);
+    setVirtualCards(nextCards);
+    persistActiveVirtualCards(nextCards);
     setVirtualNormalizeCard(null);
   };
 
@@ -390,10 +408,10 @@ export default function Reports() {
   const handleLoadVirtualConfig = (config: VirtualReportMergeConfig) => {
     const allowedIds = config.pesquisa_ids.filter(id => surveys?.some(survey => survey.id === id));
     const hasOnlyAllowedSources = config.cards.every(card => card.sources.every(source => allowedIds.includes(source.pesquisa_id)));
-    if (allowedIds.length < 2 || (isClient && !hasOnlyAllowedSources)) return;
+    if (allowedIds.length < 2 || allowedIds.length !== config.pesquisa_ids.length || (isClient && !hasOnlyAllowedSources)) return;
     setSelectedSurveyIds(allowedIds);
     setSelectedSurveyId(allowedIds[0]);
-    setVirtualCards(configToVirtualCards({ ...config, pesquisa_ids: allowedIds }));
+    setVirtualCards(configToVirtualCards(config));
     setActiveVirtualConfig(config);
   };
 
@@ -404,7 +422,9 @@ export default function Reports() {
   };
 
   const handleUndoVirtualJoin = (card: VirtualReportCardConfig) => {
-    setVirtualCards(current => unmergeVirtualCard(current, card.id, selectedSurveys));
+    const nextCards = unmergeVirtualCard(virtualCards, card.id, selectedSurveys);
+    setVirtualCards(nextCards);
+    persistActiveVirtualCards(nextCards);
   };
 
   const handleOpenMerge = (questionId: string) => {
@@ -425,7 +445,13 @@ export default function Reports() {
   };
 
   const handleExportPDF = () => {
-    if (selectedSurveyIds.length !== 1 || !selectedSurvey || !validSubmissions?.length) return;
+    if (selectedSurveyIds.length > 1) {
+      if (virtualReportCards.length > 0 && allVirtualSubmissions.length > 0) {
+        generateVirtualReportPDF(selectedSurveys, allVirtualSubmissions, virtualReportCards);
+      }
+      return;
+    }
+    if (!selectedSurvey || !validSubmissions?.length) return;
     generateReportPDF(selectedSurvey, validSubmissions);
   };
 
@@ -629,9 +655,11 @@ export default function Reports() {
           <button
             type="button"
             onClick={handleExportPDF}
-            disabled={selectedSurveyIds.length !== 1 || !selectedSurvey || validSubmissions === undefined || validSubmissions.length === 0}
+            disabled={selectedSurveyIds.length > 1
+              ? !virtualReportCards.length || !allVirtualSubmissions.length
+              : !selectedSurvey || validSubmissions === undefined || validSubmissions.length === 0}
             className="inline-flex items-center justify-center gap-3 px-6 py-4 bg-primary text-white rounded-2xl font-black shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none disabled:hover:scale-100"
-            title={selectedSurveyIds.length > 1 ? "A exportação da visão combinada ainda não está disponível" : "Exportar relatório em PDF"}
+            title={selectedSurveyIds.length > 1 ? "Exportar visão combinada em PDF" : "Exportar relatório em PDF"}
           >
             <FileDown size={20} />
             Exportar PDF
@@ -741,7 +769,6 @@ export default function Reports() {
         isOpen={isAdmin && Boolean(virtualJoinCard)}
         card={virtualJoinCard}
         surveys={selectedSurveys}
-        excludedQuestionKeys={virtualExcludedQuestionKeys}
         onClose={() => setVirtualJoinCard(null)}
         onConfirm={handleJoinVirtualCard}
       />

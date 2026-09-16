@@ -156,11 +156,31 @@ export interface VirtualReportQuestionRef {
   pergunta_id: string;
 }
 
+export interface VirtualReportOptionRef extends VirtualReportQuestionRef {
+  valor: string;
+}
+
+export interface VirtualReportOptionGroup {
+  id: string;
+  label: string;
+  options: VirtualReportOptionRef[];
+}
+
 export interface VirtualReportCardConfig {
   id: string;
   position: number;
   sources: VirtualReportQuestionRef[];
+  option_groups?: VirtualReportOptionGroup[];
   response_mappings?: Record<string, string>;
+}
+
+export interface VirtualReportAnswerOption {
+  key: string;
+  value: string;
+  count: number;
+  sourceLabel: string;
+  questionLabel: string;
+  ref: VirtualReportOptionRef;
 }
 
 export interface VirtualReportMergeConfig {

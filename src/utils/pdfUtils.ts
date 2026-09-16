@@ -2,7 +2,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Submission, Survey, Researcher, DemographicOption, ReportMergeCardData } from '../types';
+import { Submission, Survey, Researcher, DemographicOption, ReportMergeCardData, VirtualReportCardData } from '../types';
 import { aggregateQuestionResponses } from './responseNormalization';
 
 export const generateInterviewPDF = (
@@ -355,6 +355,113 @@ export const generateReportPDF = (survey: Survey, submissions: Submission[]) => 
   }
 
   const fileName = `relatorio_${reportValueToText(survey.nome).replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').toLowerCase() || 'pesquisa'}.pdf`;
+  doc.save(fileName);
+};
+
+export const generateVirtualReportPDF = (
+  surveys: Survey[],
+  submissions: Submission[],
+  cards: VirtualReportCardData[],
+) => {
+  if (surveys.length === 0 || cards.length === 0) return;
+  const validSubmissions = submissions.filter(submission => submission.valida !== false);
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 15;
+  const title = surveys.map(survey => survey.nome).join(' + ');
+  const addTitle = (value: string, y: number) => {
+    const lines = doc.splitTextToSize(value, pageWidth - margin * 2);
+    if (y + lines.length * 5 > pageHeight - 30) {
+      doc.addPage();
+      y = 24;
+    }
+    doc.setTextColor(5, 50, 97);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.text(lines, margin, y);
+    return y + lines.length * 5;
+  };
+  const addDistribution = (y: number, rows: string[][]) => {
+    if (y > pageHeight - 45) {
+      doc.addPage();
+      y = 24;
+    }
+    autoTable(doc, {
+      startY: y,
+      head: [['Resposta', 'Quantidade', 'Percentual']],
+      body: rows,
+      theme: 'grid',
+      showHead: 'everyPage',
+      margin: { top: 20, bottom: 18, left: margin, right: margin },
+      headStyles: { fillColor: [5, 50, 97], textColor: [255, 255, 255], fontStyle: 'bold' },
+      styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak', valign: 'top' },
+      columnStyles: { 0: { cellWidth: 112 }, 1: { cellWidth: 28, halign: 'right' }, 2: { cellWidth: 30, halign: 'right' } },
+    });
+    return ((doc as any).lastAutoTable?.finalY || y) + 8;
+  };
+
+  doc.setFillColor(5, 50, 97);
+  doc.rect(0, 0, pageWidth, 30, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(17);
+  doc.text('RELATÓRIO VIRTUAL CONSOLIDADO', margin, 14);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(doc.splitTextToSize(reportValueToText(title), pageWidth - margin * 2), margin, 23);
+
+  doc.setTextColor(0, 0, 0);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.text('RESUMO', margin, 43);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text(`Pesquisas: ${surveys.length} · Total de respostas: ${validSubmissions.length}`, margin, 51);
+
+  let currentY = 65;
+  currentY = addTitle('PERFIL DEMOGRÁFICO CONSOLIDADO', currentY);
+  const categories = ['sexo', 'faixa_etaria', 'renda', 'escolaridade', 'religiao', 'estado_civil'];
+  const demographicRows: string[][] = [];
+  categories.forEach(category => {
+    const counts = new Map<string, number>();
+    validSubmissions.forEach(submission => {
+      const value = reportValueToText(submission.dados_fixos?.[category]);
+      if (value !== '-') {
+        const label = REPORT_LABELS[category]?.[value] || value;
+        counts.set(label, (counts.get(label) || 0) + 1);
+      }
+    });
+    if (counts.size === 0) {
+      demographicRows.push([`${DEMOGRAPHIC_TITLES[category] || category}: Sem respostas`, '0', '0.0%']);
+    } else {
+      Array.from(counts.entries()).sort((left, right) => right[1] - left[1]).forEach(([label, count]) => {
+        demographicRows.push([`${DEMOGRAPHIC_TITLES[category] || category}: ${label}`, String(count), reportPercentage(count, validSubmissions.length)]);
+      });
+    }
+  });
+  currentY = addDistribution(currentY, demographicRows);
+
+  currentY = addTitle('PERGUNTAS/CARDS VIRTUAIS', currentY);
+  cards.forEach(card => {
+    currentY = addTitle(`${card.questionLabels.join(' + ')} (${card.surveyNames.join(' · ')})`, currentY);
+    const rows = card.answers.length > 0
+      ? card.answers.map(answer => [answer.label, String(answer.total), `${answer.percentage.toFixed(1)}%`])
+      : [['Sem respostas', '0', '0.0%']];
+    currentY = addDistribution(currentY, rows);
+  });
+
+  const generatedAt = format(new Date(), "dd/MM/yyyy HH:mm", { locale: ptBR });
+  const pageCount = (doc.internal as any).getNumberOfPages();
+  for (let page = 1; page <= pageCount; page++) {
+    doc.setPage(page);
+    doc.setTextColor(110, 110, 110);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    if (page > 1) doc.text(`Veraxus - ${reportValueToText(title)}`, margin, 11);
+    doc.text(`Gerado em ${generatedAt} - Página ${page} de ${pageCount}`, pageWidth - margin, pageHeight - 9, { align: 'right' });
+  }
+  const fileName = `relatorio_virtual_${reportValueToText(title).replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').toLowerCase() || 'pesquisas'}.pdf`;
   doc.save(fileName);
 };
 

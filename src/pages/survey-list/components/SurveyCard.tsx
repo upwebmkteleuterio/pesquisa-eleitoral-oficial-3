@@ -17,10 +17,9 @@ export function SurveyCard({ survey, regions }: SurveyCardProps) {
   const [isCached, setIsCached] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   
-  // UNIFICADO: Usando a mesma chave de cache da tela de detalhes
-  const { data: surveySubmissions } = useQuery({
-    queryKey: ['submissions', 'survey-data', survey.id],
-    queryFn: () => submissionService.getBySurveyId(survey.id),
+  const { data: submissionCount = 0 } = useQuery({
+    queryKey: ['submission-count', 'survey-card', survey.id],
+    queryFn: () => submissionService.getBySurveyIdCount(survey.id, false),
     staleTime: 1000 * 60 * 5 // 5 minutos em cache
   });
 
@@ -40,7 +39,7 @@ export function SurveyCard({ survey, regions }: SurveyCardProps) {
     };
   }, [survey.id]);
 
-  const count = surveySubmissions?.length || 0;
+  const count = submissionCount;
   const progress = (count / survey.limite_total) * 100;
   const isUrgent = progress > 90 && progress < 100;
   const isCompleted = progress >= 100;

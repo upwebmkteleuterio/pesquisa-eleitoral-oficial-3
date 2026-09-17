@@ -40,10 +40,9 @@ export default function SurveyDetails() {
     enabled: !!id
   });
 
-  // UNIFICADO: Mesma chave 'submissions', 'survey-data' do Card
   const { data: submissions, isLoading: submissionsLoading, isError: submissionsError, refetch: retrySubmissions } = useQuery({
-    queryKey: ['submissions', 'survey-data', id],
-    queryFn: () => submissionService.getBySurveyId(id!),
+    queryKey: ['submissions', 'survey-details', id, 'all'],
+    queryFn: () => submissionService.getBySurveyIdAll(id!),
     enabled: !!id
   });
 

@@ -15,6 +15,7 @@ export type LocalAudioSubmission = { key: string; submission: Submission };
 const RETRY_DELAYS_MS = [1000, 3000];
 const SYNC_TIMEOUT_MS = 15_000;
 const ADMIN_PAGE_SIZE = 50;
+const COMPLETE_PAGE_SIZE = 1000;
 const CLIENT_COLUMNS = 'id,pesquisa_id,pesquisador_id,nome_entrevistado,telefone,bairro,sexo,faixa_etaria,escolaridade,renda,religiao,respostas_dinamicas,geolocalizacao,data_coleta,created_at,estado_civil,origem,referenciado_por,audio_storage_path,audio_mime_type,audio_duration_seconds,audio_consent_at,audio_consent_state';
 let activeSync: Promise<SyncResult> | null = null;
 
@@ -585,10 +586,13 @@ export const submissionService = {
       if (!error) return count || 0;
     }
 
-    return (await this.getBySurveyIdPaged(surveyId, 1, onlyValid, userId, clientRead, researcherId)).total;
+    const local = await this.getAll(userId);
+    return local.filter(submission => submission.formulario_id === surveyId
+      && (!onlyValid || submission.valida !== false)
+      && (!safeMemberId || submission.pesquisador_id === safeMemberId || submission.referenciado_por === safeMemberId)).length;
   },
 
-  async getBySurveyIdFiltered(
+  async getBySurveyIdAll(
     surveyId: string,
     onlyValid = false,
     userId?: string,
@@ -599,22 +603,62 @@ export const submissionService = {
     if (safeMemberId === undefined) return [];
 
     if (navigator.onLine) {
-      let query = supabase
-        .from('submissoes')
-        .select(clientRead ? CLIENT_COLUMNS : '*')
-        .eq('pesquisa_id', surveyId);
-      if (onlyValid) query = query.eq('valida', true);
-      if (safeMemberId) query = query.or(`pesquisador_id.eq.${safeMemberId},referenciado_por.eq.${safeMemberId}`);
-      const { data, error } = await query
-        .order('data_coleta', { ascending: false })
-        .order('id', { ascending: false });
-      if (!error && data) return data.map(mapSubmission);
+      const records: Submission[] = [];
+      let pageStart = 0;
+      let remoteFailed = false;
+
+      while (true) {
+        let query = supabase
+          .from('submissoes')
+          .select(clientRead ? CLIENT_COLUMNS : '*', { count: 'exact' })
+          .eq('pesquisa_id', surveyId);
+        if (onlyValid) query = query.eq('valida', true);
+        if (safeMemberId) query = query.or(`pesquisador_id.eq.${safeMemberId},referenciado_por.eq.${safeMemberId}`);
+
+        const { data, count, error } = await query
+          .order('data_coleta', { ascending: false })
+          .order('id', { ascending: false })
+          .range(pageStart, pageStart + COMPLETE_PAGE_SIZE - 1);
+
+        if (error || !data) {
+          remoteFailed = true;
+          break;
+        }
+
+        records.push(...data.map(mapSubmission));
+        if (data.length === 0 || (count !== null && records.length >= count)) break;
+        pageStart += COMPLETE_PAGE_SIZE;
+      }
+
+      if (!remoteFailed) {
+        if (userId) {
+          const cached = await localforage.getItem<Submission[]>(scopedSubmissionsKey(userId)) || [];
+          const otherSurveySubmissions = cached.filter(submission => submission.formulario_id !== surveyId);
+          await localforage.setItem(scopedSubmissionsKey(userId), [...records, ...otherSurveySubmissions]);
+        }
+        return records;
+      }
     }
 
-    const local = await this.getBySurveyId(surveyId, onlyValid, userId, clientRead);
-    return [...local]
-      .filter(submission => !safeMemberId || submission.pesquisador_id === safeMemberId || submission.referenciado_por === safeMemberId)
-      .sort((a, b) => new Date(b.data_coleta).getTime() - new Date(a.data_coleta).getTime());
+    const local = await this.getAll(userId);
+    return local
+      .filter(submission => submission.formulario_id === surveyId
+        && (!onlyValid || submission.valida !== false)
+        && (!safeMemberId || submission.pesquisador_id === safeMemberId || submission.referenciado_por === safeMemberId))
+      .sort((left, right) => {
+        const dateDifference = new Date(right.data_coleta).getTime() - new Date(left.data_coleta).getTime();
+        return dateDifference || right.id.localeCompare(left.id);
+      });
+  },
+
+  async getBySurveyIdFiltered(
+    surveyId: string,
+    onlyValid = false,
+    userId?: string,
+    clientRead = false,
+    researcherId?: string,
+  ): Promise<Submission[]> {
+    return this.getBySurveyIdAll(surveyId, onlyValid, userId, clientRead, researcherId);
   },
 
   async getBySurveyId(surveyId: string, onlyValid = false, userId?: string, clientRead = false): Promise<Submission[]> {

@@ -25,8 +25,8 @@ export function useRankingData(selectedSurveyId: string) {
     enabled: isAdmin,
   });
   const { data: submissions, isLoading: isSubmissionsLoading, isFetching: isSubmissionsFetching } = useQuery<Submission[]>({
-    queryKey: ["submissions", "ranking", user?.id || "anonymous", selectedSurveyId],
-    queryFn: () => submissionService.getBySurveyId(selectedSurveyId, true, undefined, false),
+    queryKey: ["submissions", "ranking", user?.id || "anonymous", selectedSurveyId, "all"],
+    queryFn: () => submissionService.getBySurveyIdAll(selectedSurveyId, true, undefined, false),
     enabled: !!selectedSurveyId && isAdmin,
   });
 

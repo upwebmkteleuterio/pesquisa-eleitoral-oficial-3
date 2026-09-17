@@ -68,14 +68,14 @@ export default function SurveyForm() {
     enabled: isEditing
   });
 
-  const { data: submissions, isLoading: isLoadingSubmissions } = useQuery({
-    queryKey: ['submissions', 'survey', id],
-    queryFn: () => submissionService.getBySurveyId(id!),
+  const { data: submissionCount, isLoading: isLoadingSubmissionCount } = useQuery({
+    queryKey: ['submission-count', 'survey-form', id],
+    queryFn: () => submissionService.getBySurveyIdCount(id!, false),
     enabled: isEditing
   });
 
-  const isCheckingStructure = isEditing && (isLoadingSubmissions || submissions === undefined);
-  const isStructureLocked = isEditing && !isCheckingStructure && (submissions?.length ?? 0) > 0;
+  const isCheckingStructure = isEditing && (isLoadingSubmissionCount || submissionCount === undefined);
+  const isStructureLocked = isEditing && !isCheckingStructure && (submissionCount ?? 0) > 0;
   const canEditStructure = !isCheckingStructure && !isStructureLocked;
 
   const { data: linkedResearchers } = useQuery({

@@ -149,8 +149,8 @@ export default function Reports() {
     [surveys, selectedSurveyIds],
   );
   const submissionQueries = useQueries({ queries: selectedSurveyIds.map(surveyId => ({
-    queryKey: ['submissions', user?.id || 'anonymous', surveyId, 'valid'],
-    queryFn: () => submissionService.getBySurveyId(surveyId, true, isClient ? user?.id : undefined, isClient),
+    queryKey: ['submissions', user?.id || 'anonymous', surveyId, 'valid', 'all'],
+    queryFn: () => submissionService.getBySurveyIdAll(surveyId, true, isClient ? user?.id : undefined, isClient),
     enabled: !!user && (!isClient || surveys?.some(survey => survey.id === surveyId)),
   })) });
   const submissionsBySurvey = useMemo(() => Object.fromEntries(selectedSurveyIds.map((id, index) => [id, submissionQueries[index]?.data || []])), [selectedSurveyIds, submissionQueries]);
@@ -187,8 +187,8 @@ export default function Reports() {
   }, [selectedSurveyId]);
 
   const { data: submissions, isLoading: isSubmissionsLoading } = useQuery({
-    queryKey: ['submissions', user?.id || 'anonymous', selectedSurveyId, 'valid'],
-    queryFn: () => submissionService.getBySurveyId(selectedSurveyId, true, profile?.role === 'cliente' ? user?.id : undefined, isClient),
+    queryKey: ['submissions', user?.id || 'anonymous', selectedSurveyId, 'valid', 'all'],
+    queryFn: () => submissionService.getBySurveyIdAll(selectedSurveyId, true, profile?.role === 'cliente' ? user?.id : undefined, isClient),
     enabled: !!selectedSurveyId && (!isClient || surveys?.some(survey => survey.id === selectedSurveyId)),
   });
   const { data: surveyOptionImages = [] } = useQuery<SurveyOptionImageMetadata[]>({

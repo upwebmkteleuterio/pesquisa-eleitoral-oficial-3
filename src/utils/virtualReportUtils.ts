@@ -3,6 +3,7 @@ import type {
   Survey,
   VirtualReportAnswer,
   VirtualReportAnswerOption,
+  VirtualReportAnswerSource,
   VirtualReportCardConfig,
   VirtualReportCardData,
   VirtualReportMergeConfig,
@@ -132,10 +133,32 @@ export const buildVirtualReportCard = (
   const sources = card.sources || [];
   const groups = cardGroups(card);
   const groupLabels = new Map<string, string>();
-  groups.forEach(group => group.options.forEach(option => groupLabels.set(virtualOptionKey(option), group.label)));
+  const groupSources = new Map<string, VirtualReportQuestionRef[]>();
+  groups.forEach(group => group.options.forEach(option => {
+    const key = virtualOptionKey(option);
+    groupLabels.set(key, group.label);
+    groupSources.set(key, group.options);
+  }));
   const counts = new Map<string, number>();
+  const answerLabels = new Map<string, string>();
+  const answerSources = new Map<string, VirtualReportAnswerSource[]>();
   const optionKeysByValue = new Map<string, Set<string>>();
   const sourceSurveyNames = new Set<string>();
+
+  const sourceMetadata = (refs: VirtualReportQuestionRef[], includeQuestions: boolean) => {
+    const seen = new Set<string>();
+    return refs.reduce<VirtualReportAnswerSource[]>((metadata, ref) => {
+      const survey = surveys.find(item => item.id === ref.pesquisa_id);
+      const surveyName = survey?.nome || ref.pesquisa_id;
+      const question = questionLabel(survey, ref.pergunta_id);
+      const key = includeQuestions ? `${surveyName}:${question}` : surveyName;
+      if (!seen.has(key)) {
+        seen.add(key);
+        metadata.push(includeQuestions ? { surveyName, questionLabel: question } : { surveyName });
+      }
+      return metadata;
+    }, []);
+  };
 
   sources.forEach(ref => {
     const survey = surveys.find(item => item.id === ref.pesquisa_id);
@@ -153,16 +176,28 @@ export const buildVirtualReportCard = (
     valuesFor(ref, submissionsBySurvey[ref.pesquisa_id]).forEach(value => {
       const optionKey = virtualOptionKey({ ...ref, valor: value });
       const groupLabel = groupLabels.get(optionKey);
-      const label = groupLabel || (optionKeysByValue.get(value)?.size === 1
-        ? value
-        : `${survey?.nome || ref.pesquisa_id} · ${questionLabel(survey, ref.pergunta_id)}: ${value}`);
+      const hasCollision = (optionKeysByValue.get(value)?.size || 0) > 1;
+      const label = groupLabel || (hasCollision
+        ? `${survey?.nome || ref.pesquisa_id} · ${questionLabel(survey, ref.pergunta_id)}: ${value}`
+        : value);
       counts.set(label, (counts.get(label) || 0) + 1);
+      if (!answerLabels.has(label)) answerLabels.set(label, groupLabel || value);
+      if (!answerSources.has(label)) {
+        const refsForSource = groupLabel ? groupSources.get(optionKey) || [ref] : [ref];
+        answerSources.set(label, sourceMetadata(refsForSource, !groupLabel && hasCollision));
+      }
     });
   });
 
   const totalAnswers = Array.from(counts.values()).reduce((sum, total) => sum + total, 0);
   const answers: VirtualReportAnswer[] = Array.from(counts.entries())
-    .map(([label, total]) => ({ label, total, percentage: totalAnswers ? (total / totalAnswers) * 100 : 0 }))
+    .map(([label, total]) => ({
+      label,
+      total,
+      percentage: totalAnswers ? (total / totalAnswers) * 100 : 0,
+      displayLabel: answerLabels.get(label),
+      sources: answerSources.get(label),
+    }))
     .sort((left, right) => right.total - left.total || left.label.localeCompare(right.label, "pt-BR"));
 
   return {

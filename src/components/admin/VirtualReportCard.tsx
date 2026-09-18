@@ -39,7 +39,20 @@ export function VirtualReportCard({ card, isAdmin, isMenuOpen, onToggleMenu, onC
         </div>}
       </div>
       <div className="mt-6 space-y-4">
-        {card.answers.length ? card.answers.map((answer, index) => <div key={answer.label} className="space-y-2"><div className="flex justify-between gap-3 text-sm font-black"><span className="truncate text-on-surface" title={answer.label}>{answer.label}</span><span className="shrink-0 text-on-surface">{answer.total} · {answer.percentage.toFixed(1)}%</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-primary transition-all" style={{ width: `${answer.percentage}%`, opacity: 1 - index * 0.08 }} /></div></div>) : <p className="rounded-xl border border-dashed border-outline p-4 text-sm font-bold text-on-surface-variant">Nenhuma resposta válida para este card.</p>}
+        {card.answers.length ? card.answers.map((answer, index) => {
+          const displayLabel = answer.displayLabel || answer.label;
+          const sourceLabel = answer.sources?.map(source => source.questionLabel
+            ? `${source.surveyName} · ${source.questionLabel}`
+            : source.surveyName).join(" · ");
+          return <div key={answer.label} className="space-y-2">
+            <div className="flex items-start justify-between gap-3 text-sm font-black">
+              <span className="min-w-0 break-words text-on-surface" title={displayLabel}>{displayLabel}</span>
+              <span className="shrink-0 text-on-surface">{answer.total} · {answer.percentage.toFixed(1)}%</span>
+            </div>
+            {sourceLabel && <p className="truncate text-xs font-medium text-on-surface-variant" title={sourceLabel}>{sourceLabel}</p>}
+            <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-primary transition-all" style={{ width: `${answer.percentage}%`, opacity: 1 - index * 0.08 }} /></div>
+          </div>;
+        }) : <p className="rounded-xl border border-dashed border-outline p-4 text-sm font-bold text-on-surface-variant">Nenhuma resposta válida para este card.</p>}
       </div>
     </section>
   );

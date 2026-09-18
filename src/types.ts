@@ -193,10 +193,17 @@ export interface VirtualReportMergeConfig {
   updated_at: string;
 }
 
+export interface VirtualReportAnswerSource {
+  surveyName: string;
+  questionLabel?: string;
+}
+
 export interface VirtualReportAnswer {
   label: string;
   total: number;
   percentage: number;
+  displayLabel?: string;
+  sources?: VirtualReportAnswerSource[];
 }
 
 export interface VirtualReportCardData {

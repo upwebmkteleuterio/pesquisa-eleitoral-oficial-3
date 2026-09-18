@@ -10,6 +10,8 @@ interface RegionFormProps {
   onClose: () => void;
 }
 
+type RegionPayload = Omit<Region, "id"> & Partial<Pick<Region, "id">>;
+
 const BRAZILIAN_STATES = [
   "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"
 ];
@@ -21,7 +23,7 @@ export function RegionForm({ region, onClose }: RegionFormProps) {
   const [error, setError] = useState<string | null>(null);
 
   const saveMutation = useMutation({
-    mutationFn: (data: Region) => surveyService.saveRegion(data),
+    mutationFn: (data: RegionPayload) => surveyService.saveRegion(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["regions"] });
       onClose();
@@ -40,11 +42,11 @@ export function RegionForm({ region, onClose }: RegionFormProps) {
       return;
     }
 
-    saveMutation.mutate({
-      id: region?.id || `region_${Date.now()}`,
-      cidade,
-      estado
-    });
+    saveMutation.mutate(
+      region
+        ? { id: region.id, cidade, estado }
+        : { cidade, estado }
+    );
   };
 
   return (

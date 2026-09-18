@@ -181,6 +181,7 @@ export interface VirtualReportAnswerOption {
   sourceLabel: string;
   questionLabel: string;
   ref: VirtualReportOptionRef;
+  firstSeen: number;
 }
 
 export interface VirtualReportMergeConfig {

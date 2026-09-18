@@ -1,16 +1,18 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { AlertTriangle, Check, SlidersHorizontal, X } from "lucide-react";
-import type { VirtualReportAnswerOption, VirtualReportOptionGroup, VirtualReportOptionRef } from "../../types";
+import type { VirtualReportAnswerOption, VirtualReportCardConfig, VirtualReportOptionGroup, VirtualReportOptionRef } from "../../types";
+import { getVirtualAnswerGroups } from "../../utils/virtualReportUtils";
 
 interface Props {
   isOpen: boolean;
-  card: { id: string } | null;
+  card: VirtualReportCardConfig | null;
   options: VirtualReportAnswerOption[];
   onClose: () => void;
   onConfirm: (group: VirtualReportOptionGroup) => void;
+  onAutoConfirm: (groups: VirtualReportOptionGroup[]) => void;
 }
 
-export function VirtualReportNormalizeModal({ isOpen, card, options, onClose, onConfirm }: Props) {
+export function VirtualReportNormalizeModal({ isOpen, card, options, onClose, onConfirm, onAutoConfirm }: Props) {
   const [label, setLabel] = useState("");
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   useEffect(() => {
@@ -21,6 +23,7 @@ export function VirtualReportNormalizeModal({ isOpen, card, options, onClose, on
   }, [isOpen, card?.id]);
 
   if (!isOpen || !card) return null;
+  const autoGroups = getVirtualAnswerGroups(card, options);
   const selectedOptions = options.filter(option => selectedKeys.includes(option.key));
   const selectedResponseCount = selectedOptions.reduce((total, option) => total + option.count, 0);
   const canConfirm = label.trim().length > 0 && selectedKeys.length > 0;
@@ -51,7 +54,7 @@ export function VirtualReportNormalizeModal({ isOpen, card, options, onClose, on
           <fieldset className="space-y-3"><legend className="text-xs font-black uppercase tracking-widest text-on-surface-variant">Opções disponíveis</legend>{options.length ? <div className="space-y-2">{options.map(option => <label key={option.key} className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-outline p-4 transition hover:border-primary/50"><span className="flex min-w-0 items-center gap-3"><input type="checkbox" checked={selectedKeys.includes(option.key)} onChange={() => toggleOption(option.key)} className="h-5 w-5 accent-primary" /><span className="min-w-0"><span className="block truncate font-bold text-on-surface" title={option.value}>{option.value}</span><span className="block truncate text-xs font-bold text-on-surface-variant" title={`${option.sourceLabel} · ${option.questionLabel}`}>{option.sourceLabel} · {option.questionLabel}</span></span></span><span className="shrink-0 rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-black text-on-surface-variant dark:bg-slate-800">{option.count}</span></label>)}</div> : <p className="rounded-2xl border border-dashed border-outline p-4 text-sm font-bold text-on-surface-variant">Nenhuma resposta válida para agrupar.</p>}</fieldset>
           {selectedKeys.length > 0 && label.trim() && <div className="flex gap-3 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-100" role="status"><AlertTriangle size={20} className="mt-0.5 shrink-0" /><p>As <strong>{selectedResponseCount} respostas selecionadas</strong> serão exibidas como <strong>“{label}”</strong>.</p></div>}
         </div>
-        <div className="flex flex-col-reverse gap-3 border-t border-outline p-6 sm:flex-row sm:justify-end"><button type="button" onClick={onClose} className="rounded-2xl border border-outline px-5 py-3 font-black text-on-surface-variant">Cancelar</button><button type="submit" disabled={!canConfirm} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 font-black text-white disabled:cursor-not-allowed disabled:opacity-40"><Check size={18} />Confirmar agrupamento</button></div>
+        <div className="flex flex-col-reverse gap-3 border-t border-outline p-6 sm:flex-row sm:justify-end"><button type="button" onClick={() => onAutoConfirm(autoGroups)} disabled={autoGroups.length === 0} className="rounded-2xl border border-outline px-5 py-3 font-black text-on-surface-variant disabled:cursor-not-allowed disabled:opacity-40">Padronizar automaticamente</button><button type="submit" disabled={!canConfirm} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 font-black text-white disabled:cursor-not-allowed disabled:opacity-40"><Check size={18} />Confirmar agrupamento</button></div>
       </form>
     </div>
   );

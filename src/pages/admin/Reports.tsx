@@ -22,7 +22,7 @@ import { VirtualReportConfigModal } from "../../components/admin/VirtualReportCo
 import { SurveySelectionControl } from "../../components/admin/SurveySelectionControl";
 import type { ReportDemographicField, ReportMergeConfig, VirtualReportCardConfig, VirtualReportMergeConfig, VirtualReportOptionGroup, VirtualReportQuestionRef } from "../../types";
 import { virtualReportMergeService } from "../../services/virtualReportMergeService";
-import { applyVirtualAnswerGroup, buildInitialVirtualCards, buildVirtualReportData, configToVirtualCards, getVirtualAnswerOptions, mergeVirtualCard, unmergeVirtualCard } from "../../utils/virtualReportUtils";
+import { applyVirtualAnswerGroup, applyVirtualAnswerGroups, buildInitialVirtualCards, buildVirtualReportData, configToVirtualCards, getVirtualAnswerOptions, mergeVirtualCard, unmergeVirtualCard } from "../../utils/virtualReportUtils";
 import {
   PieChart as PieChartIcon,
   BarChart as BarChartIcon, Users,
@@ -458,6 +458,14 @@ export default function Reports() {
     setVirtualNormalizeCard(null);
   };
 
+  const handleAutoNormalizeVirtualCard = (groups: VirtualReportOptionGroup[]) => {
+    if (!virtualNormalizeCard || groups.length === 0) return;
+    const nextCards = applyVirtualAnswerGroups(virtualCards, virtualNormalizeCard.id, groups);
+    setVirtualCards(nextCards);
+    persistActiveVirtualCards(nextCards);
+    setVirtualNormalizeCard(null);
+  };
+
   const handleConfirmVirtualConfig = (name?: string) => {
     if (!virtualConfigModal || !isAdmin || !user) return;
     if (virtualConfigModal.mode === "delete") {
@@ -841,6 +849,7 @@ export default function Reports() {
         options={virtualNormalizeCard ? getVirtualAnswerOptions(virtualNormalizeCard, selectedSurveys, submissionsBySurvey) : []}
         onClose={() => setVirtualNormalizeCard(null)}
         onConfirm={handleNormalizeVirtualCard}
+        onAutoConfirm={handleAutoNormalizeVirtualCard}
       />
 
       <VirtualReportConfigModal

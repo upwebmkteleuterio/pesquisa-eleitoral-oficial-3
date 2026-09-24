@@ -87,7 +87,7 @@ export function TemporalReportChart({ points, answerOptions, optionImages, quest
         <Chart data={data} margin={{ top: chartType === 'bar' ? 56 : 20, right: chartType === 'line' ? 28 : 12, left: chartType === 'line' ? 86 : 0, bottom: 8 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
           <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} minTickGap={24} />
-          <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} tickFormatter={value => displayMode === 'percentage' ? `${value}%` : value.toLocaleString('pt-BR')} />
+          <YAxis width={chartType === 'line' ? 90 : 60} axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} tickFormatter={value => displayMode === 'percentage' ? `${value}%` : value.toLocaleString('pt-BR')} />
           <Tooltip content={<TemporalTooltip displayMode={displayMode} />} />
           <Legend content={<TemporalLegend answerOptions={answerOptions} optionImages={optionImages} questionId={questionId} />} />
           {answerOptions.map(option => {

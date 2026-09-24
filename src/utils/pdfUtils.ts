@@ -175,21 +175,21 @@ const DEMOGRAPHIC_TITLES: Record<string, string> = {
   estado_civil: 'Estado Civil',
 };
 
-const loadReportCover = (): Promise<HTMLImageElement> => new Promise((resolve, reject) => {
+const loadReportCover = (path = '/assets/veraxus-pesquisas-capa.jpeg'): Promise<HTMLImageElement> => new Promise((resolve, reject) => {
   const image = new Image();
   image.onload = () => resolve(image);
   image.onerror = () => reject(new Error('Não foi possível carregar a capa do relatório.'));
-  image.src = '/assets/veraxus-pesquisas-capa.jpeg';
+  image.src = path;
 });
 
-const addReportCover = (doc: jsPDF, image: HTMLImageElement) => {
+const addReportCover = (doc: jsPDF, image: HTMLImageElement, imageFormat: 'JPEG' | 'PNG' = 'JPEG') => {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const imageRatio = image.naturalWidth / image.naturalHeight;
   const pageRatio = pageWidth / pageHeight;
   const imageWidth = imageRatio > pageRatio ? pageWidth : pageHeight * imageRatio;
   const imageHeight = imageRatio > pageRatio ? pageWidth / imageRatio : pageHeight;
-  doc.addImage(image, 'JPEG', (pageWidth - imageWidth) / 2, (pageHeight - imageHeight) / 2, imageWidth, imageHeight);
+  doc.addImage(image, imageFormat, (pageWidth - imageWidth) / 2, (pageHeight - imageHeight) / 2, imageWidth, imageHeight);
 };
 
 export const generateReportPDF = async (survey: Survey, submissions: Submission[]) => {
@@ -368,11 +368,16 @@ export const generateReportPDF = async (survey: Survey, submissions: Submission[
   for (let page = 2; page <= pageCount; page++) {
     doc.setPage(page);
     doc.setDrawColor(210, 210, 210);
-    doc.line(15, 16, pageWidth - 15, 16);
+    doc.line(15, page === 2 ? 31 : 16, pageWidth - 15, page === 2 ? 31 : 16);
+    if (page > 2) {
+      doc.setTextColor(110, 110, 110);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.text(`Veraxus - ${reportValueToText(survey.nome)}`, 15, 11);
+    }
     doc.setTextColor(110, 110, 110);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    doc.text(`Veraxus - ${reportValueToText(survey.nome)}`, 15, 11);
     doc.text(`Gerado em ${generatedAt} - Página ${page} de ${pageCount}`, pageWidth - 15, pageHeight - 9, { align: 'right' });
   }
 
@@ -483,7 +488,9 @@ export const generateVirtualReportPDF = async (
     doc.setTextColor(110, 110, 110);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    doc.text(`Veraxus - ${reportValueToText(title)}`, margin, 11);
+    if (page > 2) {
+      doc.text(`Veraxus - ${reportValueToText(title)}`, margin, 11);
+    }
     doc.text(`Gerado em ${generatedAt} - Página ${page} de ${pageCount}`, pageWidth - margin, pageHeight - 9, { align: 'right' });
   }
   const fileName = `relatorio_virtual_${reportValueToText(title).replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').toLowerCase() || 'pesquisas'}.pdf`;
@@ -743,7 +750,7 @@ const drawTemporalVariation = (doc: jsPDF, cell: TemporalPdfCellBounds, variatio
   doc.text(`${Math.abs(variation.value).toFixed(0)}%`, arrowX + 4, arrowBottom + 1);
 };
 
-export const generateTemporalReportPDF = (
+export const generateTemporalReportPDF = async (
   survey: Survey,
   questionLabel: string,
   filters: TemporalReportFilters,
@@ -751,10 +758,13 @@ export const generateTemporalReportPDF = (
   chartCapture?: TemporalChartCapture,
 ) => {
   if (report.points.length === 0 || report.answerOptions.length === 0) return;
+  const cover = await loadReportCover('/assets/veraxus-pesquisas-capa-temporal.png');
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const margin = 12;
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
+  addReportCover(doc, cover, 'PNG');
+  doc.addPage();
   const periodLabel = filters.startDate || filters.endDate
     ? `${filters.startDate || 'Início'} até ${filters.endDate || 'Fim'}`
     : 'Todo o período';
@@ -855,7 +865,7 @@ export const generateTemporalReportPDF = (
 
   const generatedAt = format(new Date(), 'dd/MM/yyyy HH:mm', { locale: ptBR });
   const pageCount = (doc.internal as any).getNumberOfPages();
-  for (let page = 1; page <= pageCount; page++) {
+  for (let page = 2; page <= pageCount; page++) {
     doc.setPage(page);
     doc.setTextColor(110, 110, 110);
     doc.setFont('helvetica', 'normal');

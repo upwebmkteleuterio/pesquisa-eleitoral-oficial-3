@@ -62,7 +62,7 @@ export function TemporalReport({ surveys, surveyId, survey, submissions, optionI
       } catch {
         chartCapture = null;
       }
-      generateTemporalReportPDF(survey, selectedQuestion.label, filters, report, chartCapture || undefined);
+      await generateTemporalReportPDF(survey, selectedQuestion.label, filters, report, chartCapture || undefined);
     } finally {
       setIsExporting(false);
     }

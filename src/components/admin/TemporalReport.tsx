@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { FileDown } from 'lucide-react';
 import type { Submission, Survey, SurveyOptionImage, TemporalQuestionDefinition, TemporalReportFilters } from '../../types';
 import { buildTemporalReport, getTemporalQuestionOptions, getTemporalQuestions } from '../../utils/temporalReportUtils';
+import { captureTemporalChart } from '../../utils/temporalPdfCapture';
 import { generateTemporalReportPDF } from '../../utils/pdfUtils';
 import { TemporalGroupedBarChart } from './TemporalGroupedBarChart';
 import { TemporalHeatmap } from './TemporalHeatmap';
@@ -30,6 +31,8 @@ export function TemporalReport({ surveys, surveyId, survey, submissions, optionI
   const selectedQuestion = questions.find(question => question.id === filters.questionId);
   const availableOptions = selectedQuestion ? getTemporalQuestionOptions(selectedQuestion) : [];
   const report = useMemo(() => buildTemporalReport(submissions || [], selectedQuestion, filters), [filters, selectedQuestion, submissions]);
+  const chartCaptureRef = useRef<HTMLDivElement>(null);
+  const [isExporting, setIsExporting] = useState(false);
   const hasInvalidDateRange = Boolean(filters.startDate && filters.endDate && filters.startDate > filters.endDate);
   const canExport = !!survey && !!selectedQuestion && !hasInvalidDateRange && report.points.length > 0 && report.answerOptions.length > 0;
 
@@ -47,8 +50,20 @@ export function TemporalReport({ surveys, surveyId, survey, submissions, optionI
     setFilters(next);
   };
 
-  const handleExport = () => {
-    if (canExport && survey && selectedQuestion) generateTemporalReportPDF(survey, selectedQuestion.label, filters, report);
+  const handleExport = async () => {
+    if (!canExport || !survey || !selectedQuestion || isExporting) return;
+    setIsExporting(true);
+    try {
+      let chartCapture = null;
+      try {
+        chartCapture = await captureTemporalChart(chartCaptureRef.current);
+      } catch {
+        chartCapture = null;
+      }
+      generateTemporalReportPDF(survey, selectedQuestion.label, filters, report, chartCapture || undefined);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   return (
@@ -61,11 +76,13 @@ export function TemporalReport({ surveys, surveyId, survey, submissions, optionI
       {!isLoading && !error && hasInvalidDateRange && <div className="rounded-[2rem] border border-rose-200 bg-rose-50 p-6 text-center font-bold text-rose-800 dark:bg-rose-950/30 dark:text-rose-200" role="alert">A data final deve ser igual ou posterior à data inicial.</div>}
       {!isLoading && !error && !hasInvalidDateRange && surveyId && questions.length > 0 && (!filters.answerValues.length || !report.points.length) && <div className="rounded-[2rem] border border-dashed border-outline bg-white p-12 text-center font-bold text-on-surface-variant dark:bg-slate-900">Nenhum dado encontrado para os filtros selecionados.</div>}
       {!isLoading && !error && !hasInvalidDateRange && report.points.length > 0 && report.answerOptions.length > 0 && <section className="space-y-8 rounded-[2rem] border border-outline bg-white p-6 shadow-sm dark:bg-slate-900" aria-label="Gráfico de evolução no tempo">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div><h2 className="text-xl font-black text-on-surface">Evolução no tempo</h2><p className="text-sm font-bold text-on-surface-variant">{report.totalResponses.toLocaleString('pt-BR')} respostas válidas no período</p></div>
-          <div className="flex items-center gap-2"><span className="rounded-xl bg-primary/10 px-3 py-2 text-xs font-black text-primary">{filters.grouping === 'day' ? 'Por dia' : filters.grouping === 'week' ? 'Por semana' : 'Por mês'}</span><button type="button" onClick={handleExport} disabled={!canExport} className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-black text-white transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40" title="Imprimir relatório temporal em PDF"><FileDown size={16} />Imprimir PDF</button></div>
+        <div className="relative flex flex-col gap-4 sm:block">
+          <div className="order-first flex items-center justify-end gap-2 sm:absolute sm:right-0 sm:top-0"><span className="rounded-xl bg-primary/10 px-3 py-2 text-xs font-black text-primary">{filters.grouping === 'day' ? 'Por dia' : filters.grouping === 'week' ? 'Por semana' : 'Por mês'}</span><button type="button" onClick={handleExport} disabled={!canExport || isExporting} className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-black text-white transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40" title="Imprimir relatório temporal em PDF"><FileDown size={16} />{isExporting ? 'Gerando...' : 'Imprimir PDF'}</button></div>
+          <div ref={chartCaptureRef} className="order-last min-w-0 rounded-2xl bg-white">
+            <div className="sm:pr-56"><h2 className="text-xl font-black text-on-surface">Evolução no tempo</h2><p className="text-sm font-bold text-on-surface-variant">{report.totalResponses.toLocaleString('pt-BR')} respostas válidas no período</p></div>
+            <TemporalReportChart points={report.points} answerOptions={report.answerOptions} optionImages={optionImages} questionId={selectedQuestion?.id} displayMode={filters.displayMode} chartType={filters.chartType} />
+          </div>
         </div>
-        <TemporalReportChart points={report.points} answerOptions={report.answerOptions} optionImages={optionImages} questionId={selectedQuestion?.id} displayMode={filters.displayMode} chartType={filters.chartType} />
         <TemporalGroupedBarChart points={report.points} answerOptions={report.answerOptions} displayMode={filters.displayMode} />
         <TemporalHeatmap points={report.points} answerOptions={report.answerOptions} displayMode={filters.displayMode} />
         <TemporalReportTable points={report.points} answerOptions={report.answerOptions} optionImages={optionImages} questionId={selectedQuestion?.id} />

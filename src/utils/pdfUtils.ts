@@ -5,6 +5,7 @@ import { ptBR } from 'date-fns/locale';
 import { Submission, Survey, Researcher, DemographicOption, ReportMergeCardData, VirtualReportCardData, TemporalReportData, TemporalReportFilters } from '../types';
 import { aggregateQuestionResponses } from './responseNormalization';
 import { addTemporalVisualizationPages } from './temporalPdfCharts';
+import type { TemporalChartCapture } from './temporalPdfCapture';
 
 export const generateInterviewPDF = (
   submission: Submission,
@@ -682,11 +683,49 @@ const getSubmissionMemberId = (submission: Submission): string => {
   return memberId || "sistema";
 };
 
+interface TemporalPdfCellBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+type TemporalPdfVariation = { direction: 'up' | 'down' | 'stable'; value: number };
+
+const drawTemporalVariation = (doc: jsPDF, cell: TemporalPdfCellBounds, variation: TemporalPdfVariation) => {
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7);
+  if (variation.direction === 'stable') {
+    doc.setTextColor(120, 120, 120);
+    doc.text('-', cell.x + cell.width / 2, cell.y + cell.height - 3, { align: 'center' });
+    return;
+  }
+
+  const color: [number, number, number] = variation.direction === 'up' ? [5, 150, 105] : [225, 29, 72];
+  const arrowX = cell.x + cell.width / 2 - 8;
+  const arrowBottom = cell.y + cell.height - 4;
+  const arrowTop = arrowBottom - 5;
+  doc.setDrawColor(...color);
+  doc.setTextColor(...color);
+  doc.setLineWidth(0.6);
+  if (variation.direction === 'up') {
+    doc.line(arrowX, arrowBottom, arrowX, arrowTop);
+    doc.line(arrowX, arrowTop, arrowX - 2, arrowTop + 2);
+    doc.line(arrowX, arrowTop, arrowX + 2, arrowTop + 2);
+  } else {
+    doc.line(arrowX, arrowTop, arrowX, arrowBottom);
+    doc.line(arrowX, arrowBottom, arrowX - 2, arrowBottom - 2);
+    doc.line(arrowX, arrowBottom, arrowX + 2, arrowBottom - 2);
+  }
+  doc.text(`${Math.abs(variation.value).toFixed(0)}%`, arrowX + 4, arrowBottom + 1);
+};
+
 export const generateTemporalReportPDF = (
   survey: Survey,
   questionLabel: string,
   filters: TemporalReportFilters,
   report: TemporalReportData,
+  chartCapture?: TemporalChartCapture,
 ) => {
   if (report.points.length === 0 || report.answerOptions.length === 0) return;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
@@ -699,9 +738,9 @@ export const generateTemporalReportPDF = (
   const groupingLabel = filters.grouping === 'day' ? 'Dia' : filters.grouping === 'week' ? 'Semana' : 'Mês';
   const metricLabel = filters.displayMode === 'percentage' ? 'Percentual' : 'Quantidade';
   const formatPercentage = (value: number) => `${Math.round(value)}%`;
-  const formatVariation = (value: number, index: number) => {
-    if (index === 0 || Math.abs(value) < 0.05) return '—';
-    return `${value > 0 ? '▲' : '▼'} ${Math.abs(value).toFixed(0)}%`;
+  const getVariation = (value: number, index: number): TemporalPdfVariation => {
+    if (index === 0 || Math.abs(value) < 0.05) return { direction: 'stable', value: 0 };
+    return { direction: value > 0 ? 'up' : 'down', value };
   };
 
   doc.setFillColor(5, 50, 97);
@@ -723,22 +762,26 @@ export const generateTemporalReportPDF = (
   doc.text(`Período: ${periodLabel} · Agrupamento: ${groupingLabel} · Métrica do gráfico: ${metricLabel}`, margin, 47);
   doc.text(`Respostas válidas analisadas: ${report.totalResponses}`, margin, 54);
 
+  if (chartCapture && chartCapture.width > 0 && chartCapture.height > 0) {
+    const chartTop = 62;
+    const chartBottom = pageHeight - 18;
+    const maxWidth = pageWidth - margin * 2;
+    const maxHeight = chartBottom - chartTop;
+    const aspectRatio = chartCapture.width / chartCapture.height;
+    const imageWidth = Math.min(maxWidth, maxHeight * aspectRatio);
+    const imageHeight = imageWidth / aspectRatio;
+    doc.addImage(chartCapture.dataUrl, 'PNG', margin + (maxWidth - imageWidth) / 2, chartTop, imageWidth, imageHeight);
+  }
+
   addTemporalVisualizationPages(doc, report, filters.displayMode);
   doc.addPage();
 
-  const styleVariationCell = (data: any) => {
-    if (data.section !== 'body') return;
-    const raw = String(data.cell.raw || '');
-    if (raw.includes('▲')) data.cell.styles.textColor = [5, 150, 105];
-    if (raw.includes('▼')) data.cell.styles.textColor = [225, 29, 72];
-  };
-
   if (report.points.length > 10) {
-    const detailedRows = report.answerOptions.flatMap(option => report.points.map((point, index) => [
+    const detailedRows = report.answerOptions.flatMap(option => report.points.map(point => [
       option.label,
       point.label,
       formatPercentage(point.percentages[option.value] || 0),
-      formatVariation(point.variations[option.value]?.value || 0, index),
+      '',
     ]));
     autoTable(doc, {
       startY: 61,
@@ -748,14 +791,21 @@ export const generateTemporalReportPDF = (
       margin: { top: 32, bottom: 16, left: margin, right: margin },
       showHead: 'everyPage',
       headStyles: { fillColor: [5, 50, 97], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
-      styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak', valign: 'middle' },
+      styles: { fontSize: 8, cellPadding: 3, minCellHeight: 16, overflow: 'linebreak', valign: 'top' },
       columnStyles: { 0: { cellWidth: 62, fontStyle: 'bold' }, 1: { cellWidth: 70 }, 2: { cellWidth: 32, halign: 'right' }, 3: { cellWidth: 32, halign: 'right' } },
-      didParseCell: styleVariationCell,
+      didDrawCell: data => {
+        if (data.section !== 'body' || data.column.index !== 3) return;
+        const optionIndex = Math.floor(data.row.index / report.points.length);
+        const pointIndex = data.row.index % report.points.length;
+        const option = report.answerOptions[optionIndex];
+        const point = report.points[pointIndex];
+        drawTemporalVariation(doc, data.cell, getVariation(point?.variations[option?.value || '']?.value || 0, pointIndex));
+      },
     });
   } else {
     const rows = report.answerOptions.map(option => [
       option.label,
-      ...report.points.map((point, index) => `${formatPercentage(point.percentages[option.value] || 0)}\n${formatVariation(point.variations[option.value]?.value || 0, index)}`),
+      ...report.points.map(point => formatPercentage(point.percentages[option.value] || 0)),
     ]);
     const head = [['Resultado', ...report.points.map(point => point.label)]];
     const resultWidth = 48;
@@ -768,9 +818,15 @@ export const generateTemporalReportPDF = (
       margin: { top: 32, bottom: 16, left: margin, right: margin },
       showHead: 'everyPage',
       headStyles: { fillColor: [5, 50, 97], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8, halign: 'center' },
-      styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak', valign: 'middle', halign: 'center' },
+      styles: { fontSize: 8, cellPadding: 3, minCellHeight: 16, overflow: 'linebreak', valign: 'top', halign: 'center' },
       columnStyles: { 0: { cellWidth: resultWidth, halign: 'left', fontStyle: 'bold' }, ...Object.fromEntries(report.points.map((_, index) => [index + 1, { cellWidth: periodWidth }])) },
-      didParseCell: styleVariationCell,
+      didDrawCell: data => {
+        if (data.section !== 'body' || data.column.index === 0) return;
+        const option = report.answerOptions[data.row.index];
+        const pointIndex = data.column.index - 1;
+        const point = report.points[pointIndex];
+        drawTemporalVariation(doc, data.cell, getVariation(point?.variations[option?.value || '']?.value || 0, pointIndex));
+      },
     });
   }
 

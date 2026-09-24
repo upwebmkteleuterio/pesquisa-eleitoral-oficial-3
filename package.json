@@ -24,6 +24,7 @@
     "dotenv": "^17.2.3",
     "esbuild": "^0.28.0",
     "express": "^4.21.2",
+    "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
     "localforage": "^1.10.0",

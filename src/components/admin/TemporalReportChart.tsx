@@ -15,9 +15,10 @@ interface Props {
   questionId?: string;
   displayMode: TemporalReportFilters['displayMode'];
   chartType: TemporalReportFilters['chartType'];
+  fixedDimensions?: { width: number; height: number };
 }
 
-export function TemporalReportChart({ points, answerOptions, optionImages, questionId, displayMode, chartType }: Props) {
+export function TemporalReportChart({ points, answerOptions, optionImages, questionId, displayMode, chartType, fixedDimensions }: Props) {
   const data = points.map(point => ({
     ...point,
     ...Object.fromEntries(answerOptions.map(option => [
@@ -27,10 +28,12 @@ export function TemporalReportChart({ points, answerOptions, optionImages, quest
   }));
   const collisionOffsets = getTemporalPointOffsets(points, answerOptions, displayMode);
   const Chart = chartType === 'bar' ? BarChart : LineChart;
+  const chartClassName = chartType === 'line' ? 'h-[36rem]' : 'h-[28rem]';
+  const chartStyle = fixedDimensions ? { width: `${fixedDimensions.width}px`, height: `${fixedDimensions.height}px` } : undefined;
 
   return (
-    <div className={`${chartType === 'line' ? 'h-[36rem]' : 'h-[28rem]'} w-full min-w-0`}>
-      <ResponsiveContainer width="100%" height="100%">
+    <div className={`${chartClassName} w-full min-w-0`} style={chartStyle}>
+      <ResponsiveContainer width={fixedDimensions?.width || '100%'} height={fixedDimensions?.height || '100%'}>
         <Chart data={data} margin={{ top: chartType === 'bar' ? 56 : 48, right: 12, left: 0, bottom: 8 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
           <XAxis dataKey="label" padding={chartType === 'line' ? { left: 40, right: 40 } : undefined} axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} minTickGap={24} />

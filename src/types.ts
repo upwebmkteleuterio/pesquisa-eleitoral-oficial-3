@@ -215,3 +215,47 @@ export interface VirtualReportCardData {
   totalAnswers: number;
   answers: VirtualReportAnswer[];
 }
+
+export type TemporalGrouping = 'day' | 'week' | 'month';
+export type TemporalDisplayMode = 'count' | 'percentage';
+export type TemporalChartType = 'line' | 'bar';
+
+export interface TemporalQuestionDefinition {
+  id: string;
+  label: string;
+  type: string;
+  options?: Array<string | number>;
+  min?: number;
+  max?: number;
+  labels?: Record<string, string>;
+}
+
+export interface TemporalReportFilters {
+  questionId: string;
+  answerValues: string[];
+  startDate: string;
+  endDate: string;
+  grouping: TemporalGrouping;
+  displayMode: TemporalDisplayMode;
+  chartType: TemporalChartType;
+}
+
+export interface TemporalAnswerOption {
+  value: string;
+  label: string;
+  color: string;
+}
+
+export interface TemporalDataPoint {
+  period: string;
+  label: string;
+  total: number;
+  values: Record<string, number>;
+  percentages: Record<string, number>;
+}
+
+export interface TemporalReportData {
+  answerOptions: TemporalAnswerOption[];
+  points: TemporalDataPoint[];
+  totalResponses: number;
+}

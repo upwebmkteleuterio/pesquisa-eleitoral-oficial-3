@@ -20,6 +20,7 @@ import { VirtualReportJoinModal } from "../../components/admin/VirtualReportJoin
 import { VirtualReportNormalizeModal } from "../../components/admin/VirtualReportNormalizeModal";
 import { VirtualReportConfigModal } from "../../components/admin/VirtualReportConfigModal";
 import { SurveySelectionControl } from "../../components/admin/SurveySelectionControl";
+import { TemporalReport } from "../../components/admin/TemporalReport";
 import type { ReportDemographicField, ReportMergeConfig, VirtualReportCardConfig, VirtualReportMergeConfig, VirtualReportOptionGroup, VirtualReportQuestionRef } from "../../types";
 import { virtualReportMergeService } from "../../services/virtualReportMergeService";
 import { applyVirtualAnswerGroup, applyVirtualAnswerGroups, buildInitialVirtualCards, buildVirtualReportData, configToVirtualCards, getVirtualAnswerOptions, mergeVirtualCard, unmergeVirtualCard } from "../../utils/virtualReportUtils";
@@ -95,6 +96,8 @@ export default function Reports() {
   const [activeVirtualConfig, setActiveVirtualConfig] = useState<VirtualReportMergeConfig | null>(null);
   const [virtualConfigModal, setVirtualConfigModal] = useState<{ mode: "save" | "delete"; config?: VirtualReportMergeConfig } | null>(null);
   const [chartType, setChartType] = useState<ChartType>('horizontal');
+  const [reportMode, setReportMode] = useState<'distribution' | 'temporal'>('distribution');
+  const [temporalSurveyId, setTemporalSurveyId] = useState<string>(() => searchParams.get('id') || "");
   const [mergeQuestionId, setMergeQuestionId] = useState<string | null>(null);
   const [reportMergeModalOpen, setReportMergeModalOpen] = useState(false);
   const [editingReportMerge, setEditingReportMerge] = useState<ReportMergeConfig | null>(null);
@@ -196,6 +199,16 @@ export default function Reports() {
     queryFn: () => surveyOptionImageService.getForSurvey(selectedSurveyId),
     enabled: !!selectedSurveyId,
   });
+  const { data: temporalSubmissions, isLoading: isTemporalLoading, isError: isTemporalError, error: temporalError } = useQuery({
+    queryKey: ['submissions', user?.id || 'anonymous', temporalSurveyId, 'valid', 'temporal'],
+    queryFn: () => submissionService.getBySurveyIdAll(temporalSurveyId, true, profile?.role === 'cliente' ? user?.id : undefined, isClient),
+    enabled: reportMode === 'temporal' && !!temporalSurveyId && (!isClient || surveys?.some(survey => survey.id === temporalSurveyId)),
+  });
+  const temporalSurvey = surveys?.find(survey => survey.id === temporalSurveyId);
+
+  useEffect(() => {
+    if (!temporalSurveyId && surveys?.length) setTemporalSurveyId(selectedSurveyId || surveys[0].id);
+  }, [selectedSurveyId, surveys, temporalSurveyId]);
 
   const reportMergeQueryKey = ['report-merges', user?.id || 'anonymous', selectedSurveyId];
   const { data: reportMerges = [] } = useQuery({
@@ -680,7 +693,7 @@ export default function Reports() {
                </div>
             </div>
 
-            <button
+            {reportMode === 'distribution' && <button
               type="button"
               onClick={handleExportPDF}
               disabled={selectedSurveyIds.length > 1
@@ -691,10 +704,15 @@ export default function Reports() {
             >
               <FileDown size={20} />
               Exportar PDF
-            </button>
+            </button>}
           </div>
 
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex rounded-2xl border border-outline bg-slate-100 p-1.5 dark:bg-slate-800" role="tablist" aria-label="Modo do relatório">
+            <button type="button" role="tab" aria-selected={reportMode === 'distribution'} onClick={() => setReportMode('distribution')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${reportMode === 'distribution' ? 'bg-white text-primary shadow-sm dark:bg-slate-900' : 'text-on-surface-variant'}`}>Distribuição</button>
+            <button type="button" role="tab" aria-selected={reportMode === 'temporal'} onClick={() => setReportMode('temporal')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${reportMode === 'temporal' ? 'bg-white text-primary shadow-sm dark:bg-slate-900' : 'text-on-surface-variant'}`}>Evolução no tempo</button>
+          </div>
+
+          {reportMode === 'distribution' && <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-wrap items-center gap-4">
               <SurveySelectionControl
                 surveys={surveys || []}
@@ -734,10 +752,11 @@ export default function Reports() {
               <p className="text-[10px] font-black uppercase tracking-widest text-primary">RESPOSTAS VÁLIDAS</p>
               <p className="mt-1 text-xl font-black text-on-surface">{isSubmissionsLoading || isCombinedLoading ? "..." : (selectedSurveyIds.length > 1 ? allVirtualSubmissions.length : validSubmissions?.length || 0)}</p>
             </div>
-          </div>
+          </div>}
         </div>
       </div>
 
+      {reportMode === 'distribution' ? <>
       {selectedSurveyIds.length <= 1 && visibleVirtualConfigs.length > 0 && <section className="rounded-[2rem] border border-primary/20 bg-primary/5 p-6" aria-label="Configurações virtuais permitidas"><div className="flex flex-wrap items-center gap-3"><p className="text-xs font-black uppercase tracking-widest text-primary">Configurações de relatório disponíveis</p>{visibleVirtualConfigs.map(config => <span key={config.id} className="inline-flex items-center gap-1"><button type="button" onClick={() => handleLoadVirtualConfig(config)} className="rounded-xl border border-outline bg-white px-3 py-2 text-xs font-black text-on-surface hover:border-primary dark:bg-slate-900">{config.nome}</button>{isAdmin && <button type="button" onClick={() => handleDeleteVirtualConfig(config)} className="rounded-lg px-2 py-2 text-xs font-black text-rose-700 hover:bg-rose-50 dark:text-rose-300" aria-label={`Excluir ${config.nome}`}>×</button>}</span>)}</div></section>}
 
       {selectedSurveyId ? (
@@ -825,6 +844,15 @@ export default function Reports() {
         <p className="text-lg font-black text-on-surface">Nenhuma pesquisa selecionada</p>
         <p className="mt-2 text-sm font-bold text-on-surface-variant">Abra o seletor acima e confirme uma ou mais pesquisas para visualizar o relatório.</p>
       </div>}
+      </> : <TemporalReport
+        surveys={surveys || []}
+        surveyId={temporalSurveyId}
+        survey={temporalSurvey}
+        submissions={temporalSubmissions}
+        isLoading={isTemporalLoading}
+        error={isTemporalError ? (temporalError instanceof Error ? temporalError.message : "Não foi possível carregar as respostas.") : null}
+        onSurveyChange={setTemporalSurveyId}
+      />}
 
       <ReportMergeModal
         isOpen={isAdmin && reportMergeModalOpen}

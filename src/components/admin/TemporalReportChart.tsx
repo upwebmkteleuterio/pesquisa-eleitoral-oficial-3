@@ -84,10 +84,10 @@ export function TemporalReportChart({ points, answerOptions, optionImages, quest
   return (
     <div className="h-[28rem] w-full min-w-0">
       <ResponsiveContainer width="100%" height="100%">
-        <Chart data={data} margin={{ top: chartType === 'bar' ? 56 : 20, right: chartType === 'line' ? 28 : 12, left: chartType === 'line' ? 86 : 0, bottom: 8 }}>
+        <Chart data={data} margin={{ top: chartType === 'bar' ? 56 : 20, right: 12, left: 0, bottom: 8 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-          <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} minTickGap={24} />
-          <YAxis width={chartType === 'line' ? 90 : 60} axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} tickFormatter={value => displayMode === 'percentage' ? `${value}%` : value.toLocaleString('pt-BR')} />
+          <XAxis dataKey="label" padding={chartType === 'line' ? { left: 40, right: 40 } : undefined} axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} minTickGap={24} />
+          <YAxis width={60} axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} tickFormatter={value => displayMode === 'percentage' ? `${value}%` : value.toLocaleString('pt-BR')} />
           <Tooltip content={<TemporalTooltip displayMode={displayMode} />} />
           <Legend content={<TemporalLegend answerOptions={answerOptions} optionImages={optionImages} questionId={questionId} />} />
           {answerOptions.map(option => {

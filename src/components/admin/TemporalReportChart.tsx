@@ -1,9 +1,11 @@
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { SurveyOptionImage, TemporalAnswerOption, TemporalDataPoint, TemporalReportFilters } from '../../types';
 import { findSurveyOptionImage } from '../../utils/surveyOptionImageUtils';
-import { formatTemporalValue } from '../../utils/temporalReportUtils';
+import { getTemporalPointOffsets } from '../../utils/temporalReportUtils';
 import { ReportBarShape } from './ReportBarShape';
-import { SurveyOptionImage as SurveyOptionImageView } from '../SurveyOptionImage';
+import { TemporalReportLegend } from './TemporalReportLegend';
+import { TemporalReportPoint } from './TemporalReportPoint';
+import { TemporalReportTooltip } from './TemporalReportTooltip';
 
 interface Props {
   points: TemporalDataPoint[];
@@ -14,86 +16,31 @@ interface Props {
   chartType: TemporalReportFilters['chartType'];
 }
 
-interface TooltipProps {
-  active?: boolean;
-  payload?: Array<{ dataKey?: string; name?: string; value?: number; color?: string; payload?: TemporalDataPoint }>;
-  label?: string;
-  displayMode: TemporalReportFilters['displayMode'];
-}
-
-function TemporalTooltip({ active, payload, label, displayMode }: TooltipProps) {
-  if (!active || !payload?.length) return null;
-  const point = payload[0]?.payload as TemporalDataPoint | undefined;
-  return (
-    <div className="rounded-xl border border-outline bg-white p-3 text-xs shadow-xl dark:bg-slate-900">
-      <p className="font-black text-on-surface">{label}</p>
-      <p className="mt-1 font-bold text-primary">Total do período: {point?.total.toLocaleString('pt-BR')}</p>
-      {payload.filter(item => item.dataKey !== 'total').map(item => <p key={item.dataKey} className="font-bold text-on-surface-variant" style={{ color: item.color }}>{item.name || item.dataKey}: {formatTemporalValue(Number(item.value || 0), displayMode)}</p>)}
-    </div>
-  );
-}
-
-interface LegendProps {
-  answerOptions: TemporalAnswerOption[];
-  optionImages: SurveyOptionImage[];
-  questionId?: string;
-}
-
-function TemporalLegend({ answerOptions, optionImages, questionId }: LegendProps) {
-  return (
-    <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 px-2 pt-12 text-[11px] font-extrabold text-on-surface-variant" aria-label="Alternativas do gráfico">
-      {answerOptions.map(option => {
-        const image = findSurveyOptionImage(optionImages, questionId, [option.value, option.label]);
-        return (
-          <span key={option.value} className="inline-flex items-center gap-1.5">
-            {image
-              ? <SurveyOptionImageView image={image} alt={`Imagem de ${option.label}`} className="h-7 w-7 rounded-full border border-outline object-cover" />
-              : <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: option.color }} aria-hidden="true" />}
-            <span>{option.label}</span>
-          </span>
-        );
-      })}
-    </div>
-  );
-}
-
-interface PointProps {
-  cx?: number;
-  cy?: number;
-  value?: number;
-  color: string;
-  displayMode: TemporalReportFilters['displayMode'];
-}
-
-function TemporalPointDot({ cx, cy, value, color, displayMode }: PointProps) {
-  if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
-  return (
-    <g>
-      <circle cx={cx} cy={cy} r={5} fill="white" stroke={color} strokeWidth={2} />
-      <text x={cx} y={cy - 11} textAnchor="middle" fill="#0f172a" fontSize={10} fontWeight={800}>
-        {formatTemporalValue(Number(value || 0), displayMode)}
-      </text>
-    </g>
-  );
-}
-
 export function TemporalReportChart({ points, answerOptions, optionImages, questionId, displayMode, chartType }: Props) {
-  const data = points.map(point => ({ ...point, ...Object.fromEntries(answerOptions.map(option => [option.value, displayMode === 'percentage' ? point.percentages[option.value] : point.values[option.value]])) }));
+  const data = points.map(point => ({
+    ...point,
+    ...Object.fromEntries(answerOptions.map(option => [
+      option.value,
+      displayMode === 'percentage' ? point.percentages[option.value] : point.values[option.value],
+    ])),
+  }));
+  const collisionOffsets = getTemporalPointOffsets(points, answerOptions, displayMode);
   const Chart = chartType === 'bar' ? BarChart : LineChart;
+
   return (
-    <div className="h-[28rem] w-full min-w-0">
+    <div className={`${chartType === 'line' ? 'h-[36rem]' : 'h-[28rem]'} w-full min-w-0`}>
       <ResponsiveContainer width="100%" height="100%">
-        <Chart data={data} margin={{ top: chartType === 'bar' ? 56 : 36, right: 12, left: 0, bottom: 8 }}>
+        <Chart data={data} margin={{ top: chartType === 'bar' ? 56 : 48, right: 12, left: 0, bottom: 8 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
           <XAxis dataKey="label" padding={chartType === 'line' ? { left: 40, right: 40 } : undefined} axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} minTickGap={24} />
           <YAxis width={60} axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} tickFormatter={value => displayMode === 'percentage' ? `${value}%` : value.toLocaleString('pt-BR')} />
-          <Tooltip content={<TemporalTooltip displayMode={displayMode} />} />
-          <Legend content={<TemporalLegend answerOptions={answerOptions} optionImages={optionImages} questionId={questionId} />} />
+          <Tooltip content={<TemporalReportTooltip displayMode={displayMode} />} />
+          <Legend content={<TemporalReportLegend answerOptions={answerOptions} optionImages={optionImages} questionId={questionId} />} />
           {answerOptions.map(option => {
-            const image = findSurveyOptionImage(optionImages, questionId, [option.value, option.label]);
+            const image = option.aggregated ? undefined : findSurveyOptionImage(optionImages, questionId, [option.value, option.label]);
             return chartType === 'bar'
               ? <Bar key={option.value} dataKey={option.value} name={option.label} fill={option.color} radius={[6, 6, 0, 0]} shape={<ReportBarShape radius={6} image={image} alt={`Imagem de ${option.label}`} />} />
-              : <Line key={option.value} type="monotone" dataKey={option.value} name={option.label} stroke={option.color} strokeDasharray={option.aggregated ? '6 5' : undefined} strokeWidth={3} dot={<TemporalPointDot color={option.color} displayMode={displayMode} />} activeDot={{ r: 5 }} />;
+              : <Line key={option.value} type="monotone" dataKey={option.value} name={option.label} stroke={option.color} strokeDasharray={option.aggregated ? '6 5' : undefined} strokeWidth={3} dot={<TemporalReportPoint optionValue={option.value} label={option.label} color={option.color} image={image} displayMode={displayMode} collisionOffsets={collisionOffsets} />} activeDot={{ r: 5 }} />;
           })}
         </Chart>
       </ResponsiveContainer>

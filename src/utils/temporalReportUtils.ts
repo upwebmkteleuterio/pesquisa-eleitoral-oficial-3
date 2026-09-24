@@ -180,3 +180,46 @@ export const temporalDateDaysAgo = (days: number) => {
   date.setUTCDate(date.getUTCDate() - days);
   return dayKey({ year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() });
 };
+
+export const getTemporalPointOffsets = (
+  points: TemporalDataPoint[],
+  answerOptions: TemporalAnswerOption[],
+  displayMode: TemporalReportFilters['displayMode'],
+): Record<string, number> => {
+  const values = points.flatMap(point => answerOptions.map(option => (
+    (displayMode === 'percentage' ? point.percentages[option.value] : point.values[option.value]) ?? 0
+  ))).filter(Number.isFinite);
+  const range = values.length ? Math.max(...values) - Math.min(...values) : 0;
+  const proximity = displayMode === 'percentage' ? Math.max(3, range * 0.035) : Math.max(1, range * 0.035);
+  const offsets: Record<string, number> = {};
+
+  points.forEach((point, pointIndex) => {
+    const sorted = answerOptions
+      .map((option, optionIndex) => ({
+        option,
+        optionIndex,
+        value: (displayMode === 'percentage' ? point.percentages[option.value] : point.values[option.value]) ?? 0,
+      }))
+      .sort((left, right) => left.value - right.value || left.optionIndex - right.optionIndex);
+    let group: typeof sorted = [];
+    const flushGroup = () => {
+      const center = (group.length - 1) / 2;
+      group.forEach((item, groupIndex) => {
+        offsets[`${pointIndex}:${item.option.value}`] = (groupIndex - center) * 18;
+      });
+      group = [];
+    };
+
+    sorted.forEach((item, index) => {
+      if (index === 0 || item.value - sorted[index - 1].value <= proximity) {
+        group.push(item);
+        return;
+      }
+      flushGroup();
+      group.push(item);
+    });
+    flushGroup();
+  });
+
+  return offsets;
+};

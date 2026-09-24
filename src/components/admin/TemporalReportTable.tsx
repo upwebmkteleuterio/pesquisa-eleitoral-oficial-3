@@ -37,7 +37,7 @@ export function TemporalReportTable({ points, answerOptions, optionImages, quest
           </thead>
           <tbody>
             {answerOptions.map(option => {
-              const image = findSurveyOptionImage(optionImages, questionId, [option.value, option.label]);
+              const image = option.aggregated ? undefined : findSurveyOptionImage(optionImages, questionId, [option.value, option.label]);
               return (
                 <tr key={option.value} className="border-b border-outline/70 last:border-b-0">
                   <th scope="row" className="sticky left-0 bg-white px-4 py-3 font-black text-on-surface dark:bg-slate-900">

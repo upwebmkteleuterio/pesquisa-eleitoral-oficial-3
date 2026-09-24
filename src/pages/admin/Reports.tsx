@@ -535,15 +535,15 @@ export default function Reports() {
     mergeMutation.mutate({ questionId: mergeQuestionId, newResponse, oldValues });
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
     if (selectedSurveyIds.length > 1) {
       if (virtualReportCards.length > 0 && allVirtualSubmissions.length > 0) {
-        generateVirtualReportPDF(selectedSurveys, allVirtualSubmissions, virtualReportCards);
+        await generateVirtualReportPDF(selectedSurveys, allVirtualSubmissions, virtualReportCards);
       }
       return;
     }
     if (!selectedSurvey || !validSubmissions?.length) return;
-    generateReportPDF(selectedSurvey, validSubmissions);
+    await generateReportPDF(selectedSurvey, validSubmissions);
   };
 
   const stats = useMemo(() => {

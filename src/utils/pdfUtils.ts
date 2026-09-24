@@ -175,11 +175,31 @@ const DEMOGRAPHIC_TITLES: Record<string, string> = {
   estado_civil: 'Estado Civil',
 };
 
-export const generateReportPDF = (survey: Survey, submissions: Submission[]) => {
+const loadReportCover = (): Promise<HTMLImageElement> => new Promise((resolve, reject) => {
+  const image = new Image();
+  image.onload = () => resolve(image);
+  image.onerror = () => reject(new Error('Não foi possível carregar a capa do relatório.'));
+  image.src = '/assets/veraxus-pesquisas-capa.jpeg';
+});
+
+const addReportCover = (doc: jsPDF, image: HTMLImageElement) => {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const imageRatio = image.naturalWidth / image.naturalHeight;
+  const pageRatio = pageWidth / pageHeight;
+  const imageWidth = imageRatio > pageRatio ? pageWidth : pageHeight * imageRatio;
+  const imageHeight = imageRatio > pageRatio ? pageWidth / imageRatio : pageHeight;
+  doc.addImage(image, 'JPEG', (pageWidth - imageWidth) / 2, (pageHeight - imageHeight) / 2, imageWidth, imageHeight);
+};
+
+export const generateReportPDF = async (survey: Survey, submissions: Submission[]) => {
+  const cover = await loadReportCover();
   const validSubmissions = submissions.filter(submission => submission.valida !== false);
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
+  addReportCover(doc, cover);
+  doc.addPage();
   const total = validSubmissions.length;
   const questions = [...(survey.schema_dinamico?.questions || [])];
   const questionIds = new Set(questions.map((question: any) => question.id));
@@ -345,14 +365,14 @@ export const generateReportPDF = (survey: Survey, submissions: Submission[]) => 
 
   const generatedAt = format(new Date(), "dd/MM/yyyy HH:mm", { locale: ptBR });
   const pageCount = (doc.internal as any).getNumberOfPages();
-  for (let page = 1; page <= pageCount; page++) {
+  for (let page = 2; page <= pageCount; page++) {
     doc.setPage(page);
     doc.setDrawColor(210, 210, 210);
-    doc.line(15, page === 1 ? 31 : 16, pageWidth - 15, page === 1 ? 31 : 16);
+    doc.line(15, 16, pageWidth - 15, 16);
     doc.setTextColor(110, 110, 110);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    if (page > 1) doc.text(`Veraxus - ${reportValueToText(survey.nome)}`, 15, 11);
+    doc.text(`Veraxus - ${reportValueToText(survey.nome)}`, 15, 11);
     doc.text(`Gerado em ${generatedAt} - Página ${page} de ${pageCount}`, pageWidth - 15, pageHeight - 9, { align: 'right' });
   }
 
@@ -360,17 +380,20 @@ export const generateReportPDF = (survey: Survey, submissions: Submission[]) => 
   doc.save(fileName);
 };
 
-export const generateVirtualReportPDF = (
+export const generateVirtualReportPDF = async (
   surveys: Survey[],
   submissions: Submission[],
   cards: VirtualReportCardData[],
 ) => {
   if (surveys.length === 0 || cards.length === 0) return;
+  const cover = await loadReportCover();
   const validSubmissions = submissions.filter(submission => submission.valida !== false);
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 15;
+  addReportCover(doc, cover);
+  doc.addPage();
   const title = surveys.map(survey => survey.nome).join(' + ');
   const addTitle = (value: string, y: number) => {
     const lines = doc.splitTextToSize(value, pageWidth - margin * 2);
@@ -455,12 +478,12 @@ export const generateVirtualReportPDF = (
 
   const generatedAt = format(new Date(), "dd/MM/yyyy HH:mm", { locale: ptBR });
   const pageCount = (doc.internal as any).getNumberOfPages();
-  for (let page = 1; page <= pageCount; page++) {
+  for (let page = 2; page <= pageCount; page++) {
     doc.setPage(page);
     doc.setTextColor(110, 110, 110);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    if (page > 1) doc.text(`Veraxus - ${reportValueToText(title)}`, margin, 11);
+    doc.text(`Veraxus - ${reportValueToText(title)}`, margin, 11);
     doc.text(`Gerado em ${generatedAt} - Página ${page} de ${pageCount}`, pageWidth - margin, pageHeight - 9, { align: 'right' });
   }
   const fileName = `relatorio_virtual_${reportValueToText(title).replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').toLowerCase() || 'pesquisas'}.pdf`;

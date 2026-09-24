@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Bar, BarChart, CartesianGrid, LabelList, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { SurveyOptionImage, TemporalAnswerOption, TemporalDataPoint, TemporalReportFilters } from '../../types';
 import { findSurveyOptionImage } from '../../utils/surveyOptionImageUtils';
@@ -18,17 +19,25 @@ interface Props {
   fixedDimensions?: { width: number; height: number };
 }
 
+type TemporalChartDataPoint = TemporalDataPoint & Record<string, unknown>;
+
 export function TemporalReportChart({ points, answerOptions, optionImages, questionId, displayMode, chartType, fixedDimensions }: Props) {
-  const data = points.map(point => ({
-    ...point,
-    ...Object.fromEntries(answerOptions.map(option => [
-      option.value,
-      displayMode === 'percentage' ? point.percentages[option.value] : point.values[option.value],
-    ])),
-  }));
-  const collisionOffsets = getTemporalPointOffsets(points, answerOptions, displayMode);
+  const data = useMemo<TemporalChartDataPoint[]>(
+    () => points.map(point => answerOptions.reduce<TemporalChartDataPoint>((processedPoint, option) => {
+      processedPoint[option.value] = displayMode === 'percentage' ? point.percentages[option.value] : point.values[option.value];
+      return processedPoint;
+    }, { ...point })),
+    [answerOptions, displayMode, points],
+  );
+  const collisionOffsets = useMemo(
+    () => getTemporalPointOffsets(points, answerOptions, displayMode),
+    [answerOptions, displayMode, points],
+  );
   const Chart = chartType === 'bar' ? BarChart : LineChart;
-  const chartOptions = chartType === 'bar' ? [...getTemporalBarOptions(answerOptions)].reverse() : answerOptions;
+  const chartOptions = useMemo(
+    () => chartType === 'bar' ? [...getTemporalBarOptions(answerOptions)].reverse() : answerOptions,
+    [answerOptions, chartType],
+  );
   const chartClassName = chartType === 'line' ? 'h-[36rem]' : 'h-[28rem]';
   const chartStyle = fixedDimensions ? { width: `${fixedDimensions.width}px`, height: `${fixedDimensions.height}px` } : undefined;
 
@@ -44,12 +53,12 @@ export function TemporalReportChart({ points, answerOptions, optionImages, quest
           {chartOptions.map(option => {
             const image = option.aggregated ? undefined : findSurveyOptionImage(optionImages, questionId, [option.value, option.label]);
             return chartType === 'bar'
-              ? <Bar key={option.value} dataKey={option.value} name={option.label} fill={option.color} radius={[6, 6, 0, 0]} shape={<ReportBarShape radius={6} image={image} alt={`Imagem de ${option.label}`} />} />
+              ? <Bar key={option.value} dataKey={option.value} name={option.label} fill={option.color} radius={[6, 6, 0, 0]} isAnimationActive={false} shape={<ReportBarShape radius={6} image={image} alt={`Imagem de ${option.label}`} />} />
               : (
-                <Line key={option.value} type="monotone" dataKey={option.value} name={option.label} stroke={option.color} strokeDasharray={option.aggregated ? '6 5' : undefined} strokeWidth={3} dot={<TemporalReportPoint label={option.label} color={option.color} image={image} />} activeDot={{ r: 5 }}>
+                <Line key={option.value} type="monotone" dataKey={option.value} name={option.label} stroke={option.color} strokeDasharray={option.aggregated ? '6 5' : undefined} strokeWidth={3} isAnimationActive={false} dot={<TemporalReportPoint label={option.label} color={option.color} image={image} />} activeDot={{ r: 5 }}>
                   <LabelList
                     dataKey={option.value}
-                    content={<TemporalReportLabel optionValue={option.value} color={option.color} displayMode={displayMode} collisionOffsets={collisionOffsets} />}
+                    content={<TemporalReportLabel data={data} optionValue={option.value} color={option.color} displayMode={displayMode} collisionOffsets={collisionOffsets} />}
                   />
                 </Line>
               );

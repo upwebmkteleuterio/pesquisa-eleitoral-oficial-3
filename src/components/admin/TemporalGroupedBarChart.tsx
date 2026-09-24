@@ -54,7 +54,7 @@ export function TemporalGroupedBarChart({ points, answerOptions, displayMode }: 
               <Tooltip content={<TemporalReportTooltip displayMode={displayMode} />} />
               <Legend content={<TemporalReportLegend answerOptions={answerOptions} optionImages={[]} />} />
               {chartOptions.map(option => (
-                <Bar key={option.value} dataKey={option.value} name={option.label} fill={option.color} radius={[5, 5, 0, 0]}>
+                <Bar key={option.value} dataKey={option.value} name={option.label} fill={option.color} radius={[5, 5, 0, 0]} isAnimationActive={false}>
                   <LabelList content={<TemporalBarValueLabel color={option.aggregated ? '#64748b' : option.color} displayMode={displayMode} />} />
                 </Bar>
               ))}

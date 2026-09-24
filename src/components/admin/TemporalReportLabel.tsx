@@ -1,21 +1,29 @@
-import type { TemporalReportFilters } from '../../types';
+import type { LabelListEntry, LabelProps as RechartsLabelProps } from 'recharts';
+import type { TemporalDataPoint, TemporalReportFilters } from '../../types';
 import { formatTemporalValue } from '../../utils/temporalReportUtils';
 
-interface Props {
+type TemporalChartDataPoint = TemporalDataPoint & Record<string, unknown>;
+type TemporalReportPayload = LabelListEntry<Record<string, unknown>>['payload'] & { value?: unknown };
+
+interface Props extends Omit<RechartsLabelProps, 'x' | 'y' | 'index' | 'value'> {
   x?: number;
   y?: number;
   index?: number;
   value?: unknown;
+  payload?: TemporalReportPayload;
+  data?: TemporalChartDataPoint[];
   color: string;
   optionValue: string;
   displayMode: TemporalReportFilters['displayMode'];
   collisionOffsets: Record<string, number>;
 }
 
-export function TemporalReportLabel({ x, y, index = 0, value, color, optionValue, displayMode, collisionOffsets }: Props) {
+export function TemporalReportLabel({ x, y, index = 0, value, payload, data, color, optionValue, displayMode, collisionOffsets }: Props) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
   const offset = collisionOffsets[`${index}:${optionValue}`] ?? -14;
-  const formattedValue = formatTemporalValue(Number(value ?? 0), displayMode);
+  const dataValue = index >= 0 ? data?.[index]?.[optionValue] : undefined;
+  const resolvedValue = value ?? payload?.value ?? dataValue ?? 0;
+  const formattedValue = formatTemporalValue(Number(resolvedValue), displayMode);
   return (
     <g>
       <text

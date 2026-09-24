@@ -3,6 +3,8 @@ import { FileDown } from 'lucide-react';
 import type { Submission, Survey, SurveyOptionImage, TemporalQuestionDefinition, TemporalReportFilters } from '../../types';
 import { buildTemporalReport, getTemporalQuestionOptions, getTemporalQuestions } from '../../utils/temporalReportUtils';
 import { generateTemporalReportPDF } from '../../utils/pdfUtils';
+import { TemporalGroupedBarChart } from './TemporalGroupedBarChart';
+import { TemporalHeatmap } from './TemporalHeatmap';
 import { TemporalReportChart } from './TemporalReportChart';
 import { TemporalReportFilters as TemporalFilters } from './TemporalReportFilters';
 import { TemporalReportTable } from './TemporalReportTable';
@@ -64,6 +66,8 @@ export function TemporalReport({ surveys, surveyId, survey, submissions, optionI
           <div className="flex items-center gap-2"><span className="rounded-xl bg-primary/10 px-3 py-2 text-xs font-black text-primary">{filters.grouping === 'day' ? 'Por dia' : filters.grouping === 'week' ? 'Por semana' : 'Por mês'}</span><button type="button" onClick={handleExport} disabled={!canExport} className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-black text-white transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40" title="Imprimir relatório temporal em PDF"><FileDown size={16} />Imprimir PDF</button></div>
         </div>
         <TemporalReportChart points={report.points} answerOptions={report.answerOptions} optionImages={optionImages} questionId={selectedQuestion?.id} displayMode={filters.displayMode} chartType={filters.chartType} />
+        <TemporalGroupedBarChart points={report.points} answerOptions={report.answerOptions} displayMode={filters.displayMode} />
+        <TemporalHeatmap points={report.points} answerOptions={report.answerOptions} displayMode={filters.displayMode} />
         <TemporalReportTable points={report.points} answerOptions={report.answerOptions} optionImages={optionImages} questionId={selectedQuestion?.id} />
       </section>}
     </div>

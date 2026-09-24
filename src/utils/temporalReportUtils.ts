@@ -85,7 +85,7 @@ export const getTemporalQuestions = (questions: TemporalQuestionDefinition[]): T
 
 const OTHERS_VALUE = '__others__';
 const OTHERS_LABEL = 'Outros / NS / NR';
-const OTHERS_COLOR = '#64748b';
+const OTHERS_COLOR = '#cbd5e1';
 
 export const buildTemporalReport = (
   submissions: Submission[],
@@ -130,8 +130,8 @@ export const buildTemporalReport = (
   const rankedOptions = selectedOptions
     .map((option, index) => ({ option, index, total: optionTotals.get(option.value) || 0 }))
     .sort((left, right) => right.total - left.total || left.index - right.index);
-  const mainOptions = rankedOptions.slice(0, 4).map(item => item.option);
-  const shouldAggregate = selectedOptions.length > 4;
+  const mainOptions = rankedOptions.slice(0, 3).map(item => item.option);
+  const shouldAggregate = selectedOptions.length > 3;
   const answerOptions = shouldAggregate
     ? [...mainOptions, { value: OTHERS_VALUE, label: OTHERS_LABEL, color: OTHERS_COLOR, aggregated: true }]
     : selectedOptions;

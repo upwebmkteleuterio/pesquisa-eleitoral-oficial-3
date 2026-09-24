@@ -4,6 +4,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Submission, Survey, Researcher, DemographicOption, ReportMergeCardData, VirtualReportCardData, TemporalReportData, TemporalReportFilters } from '../types';
 import { aggregateQuestionResponses } from './responseNormalization';
+import { addTemporalVisualizationPages } from './temporalPdfCharts';
 
 export const generateInterviewPDF = (
   submission: Submission,
@@ -721,6 +722,9 @@ export const generateTemporalReportPDF = (
   doc.setFontSize(9);
   doc.text(`Período: ${periodLabel} · Agrupamento: ${groupingLabel} · Métrica do gráfico: ${metricLabel}`, margin, 47);
   doc.text(`Respostas válidas analisadas: ${report.totalResponses}`, margin, 54);
+
+  addTemporalVisualizationPages(doc, report, filters.displayMode);
+  doc.addPage();
 
   const styleVariationCell = (data: any) => {
     if (data.section !== 'body') return;

@@ -1,6 +1,6 @@
 import { Bar, BarChart, CartesianGrid, LabelList, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { TemporalAnswerOption, TemporalDataPoint, TemporalReportFilters } from '../../types';
-import { formatTemporalValue } from '../../utils/temporalReportUtils';
+import { formatTemporalValue, getTemporalBarOptions } from '../../utils/temporalReportUtils';
 import { TemporalReportLegend } from './TemporalReportLegend';
 import { TemporalReportTooltip } from './TemporalReportTooltip';
 
@@ -36,6 +36,7 @@ export function TemporalGroupedBarChart({ points, answerOptions, displayMode }: 
     ])),
   }));
   const chartWidth = Math.max(760, points.length * 150);
+  const chartOptions = [...getTemporalBarOptions(answerOptions)].reverse();
 
   return (
     <section className="space-y-3" aria-labelledby="temporal-grouped-bars-title">
@@ -52,7 +53,7 @@ export function TemporalGroupedBarChart({ points, answerOptions, displayMode }: 
               <YAxis width={62} axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} tickFormatter={value => formatTemporalValue(Number(value), displayMode)} />
               <Tooltip content={<TemporalReportTooltip displayMode={displayMode} />} />
               <Legend content={<TemporalReportLegend answerOptions={answerOptions} optionImages={[]} />} />
-              {answerOptions.map(option => (
+              {chartOptions.map(option => (
                 <Bar key={option.value} dataKey={option.value} name={option.label} fill={option.color} radius={[5, 5, 0, 0]}>
                   <LabelList content={<TemporalBarValueLabel color={option.aggregated ? '#64748b' : option.color} displayMode={displayMode} />} />
                 </Bar>

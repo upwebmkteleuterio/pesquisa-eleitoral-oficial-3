@@ -1,7 +1,7 @@
 import { Bar, BarChart, CartesianGrid, LabelList, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { SurveyOptionImage, TemporalAnswerOption, TemporalDataPoint, TemporalReportFilters } from '../../types';
 import { findSurveyOptionImage } from '../../utils/surveyOptionImageUtils';
-import { getTemporalPointOffsets } from '../../utils/temporalReportUtils';
+import { getTemporalBarOptions, getTemporalPointOffsets } from '../../utils/temporalReportUtils';
 import { ReportBarShape } from './ReportBarShape';
 import { TemporalReportLabel } from './TemporalReportLabel';
 import { TemporalReportLegend } from './TemporalReportLegend';
@@ -28,6 +28,7 @@ export function TemporalReportChart({ points, answerOptions, optionImages, quest
   }));
   const collisionOffsets = getTemporalPointOffsets(points, answerOptions, displayMode);
   const Chart = chartType === 'bar' ? BarChart : LineChart;
+  const chartOptions = chartType === 'bar' ? [...getTemporalBarOptions(answerOptions)].reverse() : answerOptions;
   const chartClassName = chartType === 'line' ? 'h-[36rem]' : 'h-[28rem]';
   const chartStyle = fixedDimensions ? { width: `${fixedDimensions.width}px`, height: `${fixedDimensions.height}px` } : undefined;
 
@@ -40,7 +41,7 @@ export function TemporalReportChart({ points, answerOptions, optionImages, quest
           <YAxis width={60} axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} tickFormatter={value => displayMode === 'percentage' ? `${value}%` : value.toLocaleString('pt-BR')} />
           <Tooltip content={<TemporalReportTooltip displayMode={displayMode} />} />
           <Legend content={<TemporalReportLegend answerOptions={answerOptions} optionImages={optionImages} questionId={questionId} />} />
-          {answerOptions.map(option => {
+          {chartOptions.map(option => {
             const image = option.aggregated ? undefined : findSurveyOptionImage(optionImages, questionId, [option.value, option.label]);
             return chartType === 'bar'
               ? <Bar key={option.value} dataKey={option.value} name={option.label} fill={option.color} radius={[6, 6, 0, 0]} shape={<ReportBarShape radius={6} image={image} alt={`Imagem de ${option.label}`} />} />

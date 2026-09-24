@@ -8,7 +8,10 @@ import type {
 } from '../types';
 
 const TIME_ZONE = 'America/Sao_Paulo';
-const COLORS = ['#059669', '#2563eb', '#e11d48', '#d97706', '#7c3aed', '#0891b2', '#db2777', '#475569'];
+const OTHERS_VALUE = '__others__';
+const OTHERS_LABEL = 'Outros / NS / NR';
+const OTHERS_COLOR = '#cbd5e1';
+const GOLDEN_ANGLE = 137.50776405003785;
 
 type LocalDateParts = { year: number; month: number; day: number };
 
@@ -70,22 +73,56 @@ export const isTemporalQuestion = (question: TemporalQuestionDefinition): boolea
   return ['radio', 'checkbox', 'select'].includes(question.type) && Boolean(question.options?.length);
 };
 
+const normalizeHue = (value: number): number => value - Math.floor(value / 360) * 360;
+
+const temporalOptionColor = (index: number, attempt = 0): string => {
+  const hue = normalizeHue(index * GOLDEN_ANGLE + attempt * 29.73);
+  const saturation = 68;
+  const lightness = 43;
+  const chroma = (1 - Math.abs((2 * lightness) / 100 - 1)) * (saturation / 100);
+  const hueSegment = hue / 60;
+  const hueSegmentPair = hueSegment - Math.floor(hueSegment / 2) * 2;
+  const secondComponent = chroma * (1 - Math.abs(hueSegmentPair - 1));
+  const [red, green, blue] = hueSegment < 1
+    ? [chroma, secondComponent, 0]
+    : hueSegment < 2
+      ? [secondComponent, chroma, 0]
+      : hueSegment < 3
+        ? [0, chroma, secondComponent]
+        : hueSegment < 4
+          ? [0, secondComponent, chroma]
+          : hueSegment < 5
+            ? [secondComponent, 0, chroma]
+            : [chroma, 0, secondComponent];
+  const match = lightness / 100 - chroma / 2;
+  return `#${[red, green, blue]
+    .map(channel => Math.round((channel + match) * 255).toString(16).padStart(2, '0'))
+    .join('')}`;
+};
+
 export const getTemporalQuestionOptions = (question: TemporalQuestionDefinition): TemporalAnswerOption[] => {
   const values = question.type === 'scale'
     ? Array.from({ length: Math.max(0, (question.max ?? 5) - (question.min ?? 1) + 1) }, (_, index) => String((question.min ?? 1) + index))
     : (question.options || []).map(option => String(option));
-  return values.map((value, index) => ({
-    value,
-    label: question.labels?.[value] || value,
-    color: COLORS[index % COLORS.length],
-  }));
+  const usedColors = new Set<string>();
+  return values.map((value, index) => {
+    let attempt = 0;
+    let color = temporalOptionColor(index, attempt);
+    while (usedColors.has(color) || color === OTHERS_COLOR) {
+      attempt += 1;
+      color = temporalOptionColor(index, attempt);
+    }
+    usedColors.add(color);
+    return { value, label: question.labels?.[value] || value, color };
+  });
 };
 
-export const getTemporalQuestions = (questions: TemporalQuestionDefinition[]): TemporalQuestionDefinition[] => questions.filter(isTemporalQuestion);
+export const getTemporalBarOptions = (answerOptions: TemporalAnswerOption[]): TemporalAnswerOption[] => [
+  ...answerOptions.filter(option => !option.aggregated),
+  ...answerOptions.filter(option => option.aggregated),
+];
 
-const OTHERS_VALUE = '__others__';
-const OTHERS_LABEL = 'Outros / NS / NR';
-const OTHERS_COLOR = '#cbd5e1';
+export const getTemporalQuestions = (questions: TemporalQuestionDefinition[]): TemporalQuestionDefinition[] => questions.filter(isTemporalQuestion);
 
 export const buildTemporalReport = (
   submissions: Submission[],

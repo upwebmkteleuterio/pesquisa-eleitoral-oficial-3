@@ -1,5 +1,6 @@
 import type { jsPDF } from 'jspdf';
 import type { TemporalAnswerOption, TemporalDataPoint, TemporalDisplayMode, TemporalReportData } from '../types';
+import { getTemporalBarOptions } from './temporalReportUtils';
 
 const MARGIN = 12;
 const OTHERS_COLOR = '#cbd5e1';
@@ -49,7 +50,8 @@ export const drawTemporalGroupedBarChart = (
   const chartHeight = 96;
   const chartTop = startY;
   const chartBottom = chartTop + chartHeight;
-  const maxValue = Math.max(1, ...points.flatMap(point => answerOptions.map(option => metricValue(point, option, displayMode))));
+  const chartOptions = getTemporalBarOptions(answerOptions);
+  const maxValue = Math.max(1, ...points.flatMap(point => chartOptions.map(option => metricValue(point, option, displayMode))));
   const axisX = MARGIN + 22;
   const axisWidth = width - 22;
   const usableGroupWidth = axisWidth / Math.max(points.length, 1);
@@ -70,7 +72,7 @@ export const drawTemporalGroupedBarChart = (
     const barAreaWidth = Math.min(usableGroupWidth * 0.82, 34);
     const barWidth = Math.max(2, barAreaWidth / Math.max(answerOptions.length, 1) - 1);
     const barsX = groupX + (usableGroupWidth - barAreaWidth) / 2;
-    answerOptions.forEach((option, optionIndex) => {
+    chartOptions.forEach((option, optionIndex) => {
       const value = metricValue(point, option, displayMode);
       const height = (value / maxValue) * chartHeight;
       const x = barsX + optionIndex * (barWidth + 1);
@@ -96,7 +98,7 @@ export const drawTemporalGroupedBarChart = (
   const legendY = chartBottom + 21;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.5);
-  answerOptions.forEach(option => {
+  chartOptions.forEach(option => {
     const labelWidth = doc.getTextWidth(option.label) + 11;
     if (legendX + labelWidth > MARGIN + width) return;
     fillColor(doc, option.aggregated ? OTHERS_COLOR : option.color);

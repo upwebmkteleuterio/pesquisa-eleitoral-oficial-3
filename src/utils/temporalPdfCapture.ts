@@ -6,6 +6,9 @@ export interface TemporalChartCapture {
   height: number;
 }
 
+const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
+const XLINK_NAMESPACE = 'http://www.w3.org/1999/xlink';
+
 const waitForImages = async (target: HTMLElement): Promise<void> => {
   const images = Array.from(target.querySelectorAll('img'));
   await Promise.all(images.map(async image => {
@@ -51,6 +54,69 @@ const hasRenderedContent = (canvas: HTMLCanvasElement): boolean => {
   return false;
 };
 
+const numericAttribute = (value: string | null, fallback: number): number => {
+  const parsed = Number.parseFloat(value || '');
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const replacePhotoForeignObjects = (target: HTMLElement): void => {
+  const foreignObjects = Array.from(target.querySelectorAll<SVGForeignObjectElement>('foreignObject'));
+  foreignObjects.forEach((foreignObject, index) => {
+    const containedImage = foreignObject.querySelector<HTMLImageElement>('img');
+    const source = containedImage?.getAttribute('src') || containedImage?.currentSrc;
+    if (!source) {
+      foreignObject.remove();
+      return;
+    }
+
+    const x = foreignObject.getAttribute('x') || '0';
+    const y = foreignObject.getAttribute('y') || '0';
+    const width = foreignObject.getAttribute('width') || '0';
+    const height = foreignObject.getAttribute('height') || '0';
+    const svg = foreignObject.ownerSVGElement;
+    if (!svg) {
+      foreignObject.remove();
+      return;
+    }
+
+    const document = foreignObject.ownerDocument;
+    const defs = svg.querySelector('defs') || document.createElementNS(SVG_NAMESPACE, 'defs');
+    if (!defs.parentNode) svg.insertBefore(defs, svg.firstChild);
+
+    let clipId = `temporal-pdf-photo-clip-${index}`;
+    let suffix = 0;
+    while (document.getElementById(clipId)) {
+      suffix += 1;
+      clipId = `temporal-pdf-photo-clip-${index}-${suffix}`;
+    }
+
+    const clipPath = document.createElementNS(SVG_NAMESPACE, 'clipPath');
+    clipPath.setAttribute('id', clipId);
+    clipPath.setAttribute('clipPathUnits', 'userSpaceOnUse');
+    const xNumber = numericAttribute(x, 0);
+    const yNumber = numericAttribute(y, 0);
+    const widthNumber = numericAttribute(width, 0);
+    const heightNumber = numericAttribute(height, 0);
+    const circle = document.createElementNS(SVG_NAMESPACE, 'circle');
+    circle.setAttribute('cx', String(xNumber + widthNumber / 2));
+    circle.setAttribute('cy', String(yNumber + heightNumber / 2));
+    circle.setAttribute('r', String(Math.min(widthNumber, heightNumber) / 2));
+    clipPath.appendChild(circle);
+    defs.appendChild(clipPath);
+
+    const image = document.createElementNS(SVG_NAMESPACE, 'image');
+    image.setAttribute('x', x);
+    image.setAttribute('y', y);
+    image.setAttribute('width', width);
+    image.setAttribute('height', height);
+    image.setAttribute('href', source);
+    image.setAttributeNS(XLINK_NAMESPACE, 'xlink:href', source);
+    image.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+    image.setAttribute('clip-path', `url(#${clipId})`);
+    foreignObject.replaceWith(image);
+  });
+};
+
 export const captureTemporalChart = async (target: HTMLElement | null): Promise<TemporalChartCapture | null> => {
   if (!target || typeof window === 'undefined') return null;
 
@@ -63,7 +129,7 @@ export const captureTemporalChart = async (target: HTMLElement | null): Promise<
     await waitForAnimationFrames(2);
     const canvas = await html2canvas(target, {
       backgroundColor: '#ffffff',
-      foreignObjectRendering: true,
+      foreignObjectRendering: false,
       imageTimeout: 15000,
       logging: false,
       onclone: clonedDocument => {
@@ -72,6 +138,11 @@ export const captureTemporalChart = async (target: HTMLElement | null): Promise<
         clonedTarget.style.position = 'fixed';
         clonedTarget.style.left = '0';
         clonedTarget.style.top = '0';
+        clonedTarget.style.width = `${Math.max(1, Math.round(bounds.width))}px`;
+        clonedTarget.style.height = `${Math.max(1, Math.round(bounds.height))}px`;
+        clonedTarget.style.minWidth = clonedTarget.style.width;
+        clonedTarget.style.minHeight = clonedTarget.style.height;
+        replacePhotoForeignObjects(clonedTarget);
       },
       scale: 3,
       useCORS: true,

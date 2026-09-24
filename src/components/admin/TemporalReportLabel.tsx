@@ -15,20 +15,32 @@ interface Props {
 export function TemporalReportLabel({ x, y, index = 0, value, color, optionValue, displayMode, collisionOffsets }: Props) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
   const offset = collisionOffsets[`${index}:${optionValue}`] ?? -14;
+  const formattedValue = formatTemporalValue(Number(value ?? 0), displayMode);
   return (
-    <text
-      x={x}
-      y={y + offset}
-      textAnchor="middle"
-      fill={color}
-      fontSize={10}
-      fontWeight={800}
-      stroke="white"
-      strokeWidth={4}
-      strokeLinejoin="round"
-      paintOrder="stroke"
-    >
-      {formatTemporalValue(Number(value ?? 0), displayMode)}
-    </text>
+    <g>
+      <text
+        x={x}
+        y={y + offset}
+        textAnchor="middle"
+        fill="white"
+        stroke="white"
+        strokeWidth={4}
+        strokeLinejoin="round"
+        fontSize={10}
+        fontWeight={800}
+      >
+        {formattedValue}
+      </text>
+      <text
+        x={x}
+        y={y + offset}
+        textAnchor="middle"
+        fill={color}
+        fontSize={10}
+        fontWeight={800}
+      >
+        {formattedValue}
+      </text>
+    </g>
   );
 }

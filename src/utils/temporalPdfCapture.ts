@@ -59,15 +59,47 @@ const numericAttribute = (value: string | null, fallback: number): number => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
-const replacePhotoForeignObjects = (target: HTMLElement): void => {
+const blobToDataUrl = (blob: Blob): Promise<string> => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.addEventListener('load', () => {
+    if (typeof reader.result === 'string') resolve(reader.result);
+    else reject(new Error('image-data-url-unavailable'));
+  }, { once: true });
+  reader.addEventListener('error', () => reject(reader.error || new Error('image-read-failed')), { once: true });
+  reader.readAsDataURL(blob);
+});
+
+const embedLoadedObjectUrlImages = async (target: HTMLElement): Promise<Map<string, string>> => {
+  const sources = new Set(
+    Array.from(target.querySelectorAll<HTMLImageElement>('img'))
+      .map(image => image.currentSrc || image.getAttribute('src') || '')
+      .filter(source => source.startsWith('blob:')),
+  );
+  const embeddedSources = new Map<string, string>();
+
+  await Promise.all(Array.from(sources).map(async source => {
+    try {
+      const response = await fetch(source);
+      if (!response.ok) throw new Error(`image-fetch-failed-${response.status}`);
+      embeddedSources.set(source, await blobToDataUrl(await response.blob()));
+    } catch {
+      // Keep the object URL as a fallback when a loaded image cannot be embedded.
+    }
+  }));
+
+  return embeddedSources;
+};
+
+const replacePhotoForeignObjects = (target: HTMLElement, embeddedSources: Map<string, string>): void => {
   const foreignObjects = Array.from(target.querySelectorAll<SVGForeignObjectElement>('foreignObject'));
   foreignObjects.forEach((foreignObject, index) => {
     const containedImage = foreignObject.querySelector<HTMLImageElement>('img');
-    const source = containedImage?.getAttribute('src') || containedImage?.currentSrc;
+    const source = containedImage?.currentSrc || containedImage?.getAttribute('src');
     if (!source) {
       foreignObject.remove();
       return;
     }
+    const imageSource = embeddedSources.get(source) || source;
 
     const x = foreignObject.getAttribute('x') || '0';
     const y = foreignObject.getAttribute('y') || '0';
@@ -109,8 +141,8 @@ const replacePhotoForeignObjects = (target: HTMLElement): void => {
     image.setAttribute('y', y);
     image.setAttribute('width', width);
     image.setAttribute('height', height);
-    image.setAttribute('href', source);
-    image.setAttributeNS(XLINK_NAMESPACE, 'xlink:href', source);
+    image.setAttribute('href', imageSource);
+    image.setAttributeNS(XLINK_NAMESPACE, 'xlink:href', imageSource);
     image.setAttribute('preserveAspectRatio', 'xMidYMid slice');
     image.setAttribute('clip-path', `url(#${clipId})`);
     foreignObject.replaceWith(image);
@@ -126,6 +158,7 @@ export const captureTemporalChart = async (target: HTMLElement | null): Promise<
     if (bounds.width <= 0 || bounds.height <= 0) return null;
 
     await waitForImages(target);
+    const embeddedSources = await embedLoadedObjectUrlImages(target);
     await waitForAnimationFrames(2);
     const canvas = await html2canvas(target, {
       backgroundColor: '#ffffff',
@@ -142,7 +175,7 @@ export const captureTemporalChart = async (target: HTMLElement | null): Promise<
         clonedTarget.style.height = `${Math.max(1, Math.round(bounds.height))}px`;
         clonedTarget.style.minWidth = clonedTarget.style.width;
         clonedTarget.style.minHeight = clonedTarget.style.height;
-        replacePhotoForeignObjects(clonedTarget);
+        replacePhotoForeignObjects(clonedTarget, embeddedSources);
       },
       scale: 3,
       useCORS: true,

@@ -1,6 +1,7 @@
 import localforage from "localforage";
 import { supabase } from "@/src/integrations/supabase/client";
 import { Survey, Quota, DemographicOption, Region } from "../types";
+import { surveyOptionImageService } from "./surveyOptionImageService";
 
 const SURVEYS_KEY = "electoral_surveys";
 const REGIONS_KEY = "electoral_regions";
@@ -176,14 +177,28 @@ export const surveyService = {
     if (!survey) throw new Error("Pesquisa não encontrada");
 
     const { id: _, created_at, ...surveyData } = survey as any;
-    const newSurvey = {
+    const newSurveyData = {
       ...surveyData,
       nome: `${survey.nome} (Cópia)`,
       total_coletado: 0,
       status: 'pausado',
     };
 
-    return await this.save(newSurvey);
+    let newSurvey: Survey | undefined;
+    try {
+      newSurvey = await this.save(newSurveyData);
+      await surveyOptionImageService.copyForSurvey(id, newSurvey.id);
+      return newSurvey;
+    } catch (error) {
+      if (newSurvey) {
+        try {
+          await this.delete(newSurvey.id);
+        } catch {
+          // Preserve the original duplication error if cleanup is not possible.
+        }
+      }
+      throw error;
+    }
   },
 
   async updateStatus(id: string, status: 'ativo' | 'pausado' | 'concluido'): Promise<void> {

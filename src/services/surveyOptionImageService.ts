@@ -50,6 +50,39 @@ export const surveyOptionImageService = {
     }
   },
 
+  async copyForSurvey(sourceSurveyId: string, targetSurveyId: string): Promise<SurveyOptionImage[]> {
+    const { data: sourceData, error: sourceError } = await supabase
+      .from("pesquisa_alternativa_imagens")
+      .select("pergunta_id, alternativa, storage_path")
+      .eq("pesquisa_id", sourceSurveyId);
+    if (sourceError) throw sourceError;
+
+    const sourceImages = sourceData || [];
+    if (sourceImages.length === 0) {
+      await localforage.setItem(metadataKey(targetSurveyId), []);
+      return [];
+    }
+
+    const { data, error } = await supabase
+      .from("pesquisa_alternativa_imagens")
+      .upsert(
+        sourceImages.map(image => ({
+          pesquisa_id: targetSurveyId,
+          pergunta_id: image.pergunta_id,
+          alternativa: image.alternativa,
+          storage_path: image.storage_path,
+        })),
+        { onConflict: "pesquisa_id,pergunta_id,alternativa" },
+      )
+      .select("id, pesquisa_id, pergunta_id, alternativa, storage_path, created_at, updated_at");
+    if (error) throw error;
+
+    const metadata = (data || []) as SurveyOptionImage[];
+    await localforage.setItem(metadataKey(targetSurveyId), metadata);
+    await Promise.all(metadata.map(image => this.getImageBlob(image)));
+    return metadata;
+  },
+
   getPublicUrl(storagePath: string): string {
     return supabase.storage.from(IMAGE_BUCKET).getPublicUrl(storagePath).data.publicUrl;
   },

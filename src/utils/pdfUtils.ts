@@ -2,7 +2,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Submission, Survey, Researcher, DemographicOption, ReportMergeCardData, VirtualReportCardData } from '../types';
+import { Submission, Survey, Researcher, DemographicOption, ReportMergeCardData, VirtualReportCardData, TemporalReportData, TemporalReportFilters } from '../types';
 import { aggregateQuestionResponses } from './responseNormalization';
 
 export const generateInterviewPDF = (
@@ -679,4 +679,107 @@ export const generateResponsesPDF = (
 const getSubmissionMemberId = (submission: Submission): string => {
   const memberId = submission.origem === "web" ? submission.referenciado_por : submission.pesquisador_id;
   return memberId || "sistema";
+};
+
+export const generateTemporalReportPDF = (
+  survey: Survey,
+  questionLabel: string,
+  filters: TemporalReportFilters,
+  report: TemporalReportData,
+) => {
+  if (report.points.length === 0 || report.answerOptions.length === 0) return;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const margin = 12;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const periodLabel = filters.startDate || filters.endDate
+    ? `${filters.startDate || 'Início'} até ${filters.endDate || 'Fim'}`
+    : 'Todo o período';
+  const groupingLabel = filters.grouping === 'day' ? 'Dia' : filters.grouping === 'week' ? 'Semana' : 'Mês';
+  const metricLabel = filters.displayMode === 'percentage' ? 'Percentual' : 'Quantidade';
+  const formatPercentage = (value: number) => `${Math.round(value)}%`;
+  const formatVariation = (value: number, index: number) => {
+    if (index === 0 || Math.abs(value) < 0.05) return '—';
+    return `${value > 0 ? '▲' : '▼'} ${Math.abs(value).toFixed(0)}%`;
+  };
+
+  doc.setFillColor(5, 50, 97);
+  doc.rect(0, 0, pageWidth, 28, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.text('EVOLUÇÃO TEMPORAL', margin, 13);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(reportValueToText(survey.nome), margin, 21);
+
+  doc.setTextColor(30, 30, 30);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text(doc.splitTextToSize(`Pergunta: ${questionLabel}`, pageWidth - margin * 2), margin, 39);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(`Período: ${periodLabel} · Agrupamento: ${groupingLabel} · Métrica do gráfico: ${metricLabel}`, margin, 47);
+  doc.text(`Respostas válidas analisadas: ${report.totalResponses}`, margin, 54);
+
+  const styleVariationCell = (data: any) => {
+    if (data.section !== 'body') return;
+    const raw = String(data.cell.raw || '');
+    if (raw.includes('▲')) data.cell.styles.textColor = [5, 150, 105];
+    if (raw.includes('▼')) data.cell.styles.textColor = [225, 29, 72];
+  };
+
+  if (report.points.length > 10) {
+    const detailedRows = report.answerOptions.flatMap(option => report.points.map((point, index) => [
+      option.label,
+      point.label,
+      formatPercentage(point.percentages[option.value] || 0),
+      formatVariation(point.variations[option.value]?.value || 0, index),
+    ]));
+    autoTable(doc, {
+      startY: 61,
+      head: [['Resultado', 'Período', 'Percentual', 'Variação']],
+      body: detailedRows,
+      theme: 'grid',
+      margin: { top: 32, bottom: 16, left: margin, right: margin },
+      showHead: 'everyPage',
+      headStyles: { fillColor: [5, 50, 97], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
+      styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak', valign: 'middle' },
+      columnStyles: { 0: { cellWidth: 62, fontStyle: 'bold' }, 1: { cellWidth: 70 }, 2: { cellWidth: 32, halign: 'right' }, 3: { cellWidth: 32, halign: 'right' } },
+      didParseCell: styleVariationCell,
+    });
+  } else {
+    const rows = report.answerOptions.map(option => [
+      option.label,
+      ...report.points.map((point, index) => `${formatPercentage(point.percentages[option.value] || 0)}\n${formatVariation(point.variations[option.value]?.value || 0, index)}`),
+    ]);
+    const head = [['Resultado', ...report.points.map(point => point.label)]];
+    const resultWidth = 48;
+    const periodWidth = (pageWidth - margin * 2 - resultWidth) / report.points.length;
+    autoTable(doc, {
+      startY: 61,
+      head,
+      body: rows,
+      theme: 'grid',
+      margin: { top: 32, bottom: 16, left: margin, right: margin },
+      showHead: 'everyPage',
+      headStyles: { fillColor: [5, 50, 97], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8, halign: 'center' },
+      styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak', valign: 'middle', halign: 'center' },
+      columnStyles: { 0: { cellWidth: resultWidth, halign: 'left', fontStyle: 'bold' }, ...Object.fromEntries(report.points.map((_, index) => [index + 1, { cellWidth: periodWidth }])) },
+      didParseCell: styleVariationCell,
+    });
+  }
+
+  const generatedAt = format(new Date(), 'dd/MM/yyyy HH:mm', { locale: ptBR });
+  const pageCount = (doc.internal as any).getNumberOfPages();
+  for (let page = 1; page <= pageCount; page++) {
+    doc.setPage(page);
+    doc.setTextColor(110, 110, 110);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text(`Gerado em ${generatedAt} - Veraxus - Página ${page} de ${pageCount}`, pageWidth - margin, pageHeight - 8, { align: 'right' });
+  }
+
+  const fileName = `evolucao_temporal_${reportValueToText(survey.nome).replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').toLowerCase() || 'pesquisa'}.pdf`;
+  doc.save(fileName);
 };

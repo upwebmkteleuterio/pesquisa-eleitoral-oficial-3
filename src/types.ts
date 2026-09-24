@@ -240,10 +240,18 @@ export interface TemporalReportFilters {
   chartType: TemporalChartType;
 }
 
+export type TemporalVariationDirection = 'up' | 'down' | 'stable';
+
+export interface TemporalVariation {
+  value: number;
+  direction: TemporalVariationDirection;
+}
+
 export interface TemporalAnswerOption {
   value: string;
   label: string;
   color: string;
+  aggregated?: boolean;
 }
 
 export interface TemporalDataPoint {
@@ -252,6 +260,7 @@ export interface TemporalDataPoint {
   total: number;
   values: Record<string, number>;
   percentages: Record<string, number>;
+  variations: Record<string, TemporalVariation>;
 }
 
 export interface TemporalReportData {

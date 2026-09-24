@@ -83,15 +83,20 @@ export const getTemporalQuestionOptions = (question: TemporalQuestionDefinition)
 
 export const getTemporalQuestions = (questions: TemporalQuestionDefinition[]): TemporalQuestionDefinition[] => questions.filter(isTemporalQuestion);
 
+const OTHERS_VALUE = '__others__';
+const OTHERS_LABEL = 'Outros / NS / NR';
+const OTHERS_COLOR = '#64748b';
+
 export const buildTemporalReport = (
   submissions: Submission[],
   question: TemporalQuestionDefinition | undefined,
   filters: TemporalReportFilters,
 ): TemporalReportData => {
   if (!question) return { answerOptions: [], points: [], totalResponses: 0 };
-  const answerOptions = getTemporalQuestionOptions(question).filter(option => filters.answerValues.includes(option.value));
-  const optionValues = new Set(answerOptions.map(option => option.value));
+  const selectedOptions = getTemporalQuestionOptions(question).filter(option => filters.answerValues.includes(option.value));
+  const selectedValues = new Set(selectedOptions.map(option => option.value));
   const pointMap = new Map<string, TemporalDataPoint>();
+  const optionTotals = new Map(selectedOptions.map(option => [option.value, 0]));
   let totalResponses = 0;
 
   submissions.forEach(submission => {
@@ -107,22 +112,55 @@ export const buildTemporalReport = (
       period: period.period,
       label: period.label,
       total: 0,
-      values: Object.fromEntries(answerOptions.map(option => [option.value, 0])),
-      percentages: Object.fromEntries(answerOptions.map(option => [option.value, 0])),
+      values: Object.fromEntries(selectedOptions.map(option => [option.value, 0])),
+      percentages: Object.fromEntries(selectedOptions.map(option => [option.value, 0])),
+      variations: {},
     };
     point.total += 1;
     values.forEach(value => {
-      if (optionValues.has(value)) point.values[value] += 1;
+      if (selectedValues.has(value)) {
+        point.values[value] += 1;
+        optionTotals.set(value, (optionTotals.get(value) || 0) + 1);
+      }
     });
     pointMap.set(period.period, point);
     totalResponses += 1;
   });
 
+  const rankedOptions = selectedOptions
+    .map((option, index) => ({ option, index, total: optionTotals.get(option.value) || 0 }))
+    .sort((left, right) => right.total - left.total || left.index - right.index);
+  const mainOptions = rankedOptions.slice(0, 4).map(item => item.option);
+  const shouldAggregate = selectedOptions.length > 4;
+  const answerOptions = shouldAggregate
+    ? [...mainOptions, { value: OTHERS_VALUE, label: OTHERS_LABEL, color: OTHERS_COLOR, aggregated: true }]
+    : selectedOptions;
+  const mainValues = new Set(mainOptions.map(option => option.value));
+
   const points = Array.from(pointMap.values()).sort((left, right) => left.period.localeCompare(right.period));
-  points.forEach(point => {
-    answerOptions.forEach(option => {
-      point.percentages[option.value] = point.total ? (point.values[option.value] / point.total) * 100 : 0;
+  points.forEach((point, pointIndex) => {
+    const originalValues = { ...point.values };
+    point.values = Object.fromEntries(answerOptions.map(option => [option.value, 0]));
+    mainOptions.forEach(option => {
+      point.values[option.value] = originalValues[option.value] || 0;
     });
+    if (shouldAggregate) {
+      point.values[OTHERS_VALUE] = selectedOptions
+        .filter(option => !mainValues.has(option.value))
+        .reduce((sum, option) => sum + (originalValues[option.value] || 0), 0);
+    }
+    point.percentages = Object.fromEntries(answerOptions.map(option => [
+      option.value,
+      point.total ? (point.values[option.value] / point.total) * 100 : 0,
+    ]));
+    point.variations = Object.fromEntries(answerOptions.map(option => {
+      const previous = points[pointIndex - 1]?.percentages[option.value] ?? 0;
+      const value = point.percentages[option.value] - previous;
+      return [option.value, {
+        value,
+        direction: Math.abs(value) < 0.05 ? 'stable' : value > 0 ? 'up' : 'down',
+      }];
+    }));
   });
   return { answerOptions, points, totalResponses };
 };

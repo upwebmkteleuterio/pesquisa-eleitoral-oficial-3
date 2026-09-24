@@ -3,7 +3,6 @@ import type { SurveyOptionImage, TemporalAnswerOption, TemporalDataPoint, Tempor
 import { findSurveyOptionImage } from '../../utils/surveyOptionImageUtils';
 import { formatTemporalValue } from '../../utils/temporalReportUtils';
 import { ReportBarShape } from './ReportBarShape';
-import { ReportOptionImageMarker } from './ReportOptionImageMarker';
 import { SurveyOptionImage as SurveyOptionImageView } from '../SurveyOptionImage';
 
 interface Props {
@@ -58,22 +57,22 @@ function TemporalLegend({ answerOptions, optionImages, questionId }: LegendProps
   );
 }
 
-interface DotProps {
+interface PointProps {
   cx?: number;
   cy?: number;
-  index?: number;
+  value?: number;
   color: string;
-  image?: SurveyOptionImage;
-  label: string;
+  displayMode: TemporalReportFilters['displayMode'];
 }
 
-function TemporalImageDot({ cx, cy, index, color, image, label }: DotProps) {
+function TemporalPointDot({ cx, cy, value, color, displayMode }: PointProps) {
   if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
-  if (!image || index !== 0) return <circle cx={cx} cy={cy} r={3} fill={color} />;
   return (
     <g>
-      <circle cx={cx} cy={cy} r={16} fill="white" stroke={color} strokeWidth={2} />
-      <ReportOptionImageMarker image={image} alt={`Imagem de ${label}`} centerX={cx} top={cy - 14} size={28} />
+      <circle cx={cx} cy={cy} r={5} fill="white" stroke={color} strokeWidth={2} />
+      <text x={cx} y={cy - 11} textAnchor="middle" fill="#0f172a" fontSize={10} fontWeight={800}>
+        {formatTemporalValue(Number(value || 0), displayMode)}
+      </text>
     </g>
   );
 }
@@ -84,7 +83,7 @@ export function TemporalReportChart({ points, answerOptions, optionImages, quest
   return (
     <div className="h-[28rem] w-full min-w-0">
       <ResponsiveContainer width="100%" height="100%">
-        <Chart data={data} margin={{ top: chartType === 'bar' ? 56 : 20, right: 12, left: 0, bottom: 8 }}>
+        <Chart data={data} margin={{ top: chartType === 'bar' ? 56 : 36, right: 12, left: 0, bottom: 8 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
           <XAxis dataKey="label" padding={chartType === 'line' ? { left: 40, right: 40 } : undefined} axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} minTickGap={24} />
           <YAxis width={60} axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} tickFormatter={value => displayMode === 'percentage' ? `${value}%` : value.toLocaleString('pt-BR')} />
@@ -94,7 +93,7 @@ export function TemporalReportChart({ points, answerOptions, optionImages, quest
             const image = findSurveyOptionImage(optionImages, questionId, [option.value, option.label]);
             return chartType === 'bar'
               ? <Bar key={option.value} dataKey={option.value} name={option.label} fill={option.color} radius={[6, 6, 0, 0]} shape={<ReportBarShape radius={6} image={image} alt={`Imagem de ${option.label}`} />} />
-              : <Line key={option.value} type="monotone" dataKey={option.value} name={option.label} stroke={option.color} strokeWidth={3} dot={<TemporalImageDot color={option.color} image={image} label={option.label} />} activeDot={{ r: 5 }} />;
+              : <Line key={option.value} type="monotone" dataKey={option.value} name={option.label} stroke={option.color} strokeDasharray={option.aggregated ? '6 5' : undefined} strokeWidth={3} dot={<TemporalPointDot color={option.color} displayMode={displayMode} />} activeDot={{ r: 5 }} />;
           })}
         </Chart>
       </ResponsiveContainer>

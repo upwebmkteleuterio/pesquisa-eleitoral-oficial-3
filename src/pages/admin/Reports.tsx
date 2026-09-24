@@ -8,8 +8,9 @@ import { responseMergeService } from "../../services/responseMergeService";
 import { reportMergeService } from "../../services/reportMergeService";
 import { surveyOptionImageService } from "../../services/surveyOptionImageService";
 import { SurveyOptionImage } from "../../components/SurveyOptionImage";
-import { isCandidateQuestion } from "../../utils/responseNormalization";
+import { ReportBarShape } from "../../components/admin/ReportBarShape";
 import type { SurveyOptionImage as SurveyOptionImageMetadata } from "../../types";
+import { findSurveyOptionImage } from "../../utils/surveyOptionImageUtils";
 import { useAuth } from "../../contexts/AuthContext";
 import { ResponseMergeModal, type ResponseMergeOption } from "../../components/admin/ResponseMergeModal";
 import { ReportMergeActions } from "../../components/admin/ReportMergeActions";
@@ -198,6 +199,11 @@ export default function Reports() {
     queryKey: ['survey-option-images', selectedSurveyId],
     queryFn: () => surveyOptionImageService.getForSurvey(selectedSurveyId),
     enabled: !!selectedSurveyId,
+  });
+  const { data: temporalOptionImages = [] } = useQuery<SurveyOptionImageMetadata[]>({
+    queryKey: ['survey-option-images', temporalSurveyId],
+    queryFn: () => surveyOptionImageService.getForSurvey(temporalSurveyId),
+    enabled: reportMode === 'temporal' && !!temporalSurveyId && !!surveys?.some(survey => survey.id === temporalSurveyId),
   });
   const { data: temporalSubmissions, isLoading: isTemporalLoading, isError: isTemporalError, error: temporalError } = useQuery({
     queryKey: ['submissions', user?.id || 'anonymous', temporalSurveyId, 'valid', 'temporal'],
@@ -581,15 +587,16 @@ export default function Reports() {
   }, [allVirtualSubmissions, selectedSurveyIds, validSubmissions, selectedSurvey]);
 
   const renderChart = (data: any[], question?: { id: string; label?: string }) => {
-    const isCandidateChart = !!question && isCandidateQuestion(question.label);
+    const chartData = data.map(item => ({
+      ...item,
+      image: findSurveyOptionImage(surveyOptionImages, question?.id, [String(item.name)]),
+    }));
     if (chartType === 'horizontal') {
       return (
         <div className="space-y-4">
-          {[...data].sort((a, b) => b.value - a.value).map((item, idx) => {
+          {[...chartData].sort((a, b) => b.value - a.value).map((item, idx) => {
             const percent = (item.value / (stats?.total || 1)) * 100;
-            const image = isCandidateChart
-              ? surveyOptionImages.find(option => option.pergunta_id === question?.id && normalizeImageLabel(option.alternativa) === normalizeImageLabel(item.name))
-              : undefined;
+            const image = item.image;
             return (
               <div key={idx} className="space-y-3 rounded-[1.5rem] border border-transparent bg-slate-50 p-5 hover:border-primary/20 dark:bg-slate-800/40">
                 <div className="flex items-center justify-between text-xs font-black">
@@ -618,7 +625,7 @@ export default function Reports() {
       return (
         <div className="h-[300px] w-full pt-4">
           <ResponsiveContainer width="100%" height="100%">
-            <ReBarChart data={data}>
+            <ReBarChart data={chartData} margin={{ top: 56, right: 12, left: 0, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
               <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
               <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
@@ -626,8 +633,8 @@ export default function Reports() {
                 cursor={{ fill: 'rgba(5, 150, 105, 0.05)' }} 
                 contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} 
               />
-              <Bar dataKey="value" radius={[10, 10, 0, 0]}>
-                {data.map((_, index) => (
+              <Bar dataKey="value" data={chartData} shape={<ReportBarShape />}>
+                {chartData.map((_, index) => (
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Bar>
@@ -849,6 +856,7 @@ export default function Reports() {
         surveyId={temporalSurveyId}
         survey={temporalSurvey}
         submissions={temporalSubmissions}
+        optionImages={temporalOptionImages}
         isLoading={isTemporalLoading}
         error={isTemporalError ? (temporalError instanceof Error ? temporalError.message : "Não foi possível carregar as respostas.") : null}
         onSurveyChange={setTemporalSurveyId}

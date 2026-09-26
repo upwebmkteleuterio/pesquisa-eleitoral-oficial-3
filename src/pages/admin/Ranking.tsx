@@ -3,12 +3,26 @@ import { RankingEmptyState } from "../../components/admin/ranking/RankingEmptySt
 import { RankingHeader } from "../../components/admin/ranking/RankingHeader";
 import { RankingList } from "../../components/admin/ranking/RankingList";
 import { useRankingData } from "../../hooks/useRankingData";
+import { generateRankingPDF } from "../../utils/pdfUtils";
 
 export default function Ranking() {
   const [selectedSurveyId, setSelectedSurveyId] = useState("");
   const [isAnimationActive, setIsAnimationActive] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const { surveys, ranking, isLoading, isSurveysLoading } = useRankingData(selectedSurveyId);
+  const selectedSurvey = surveys?.find(survey => survey.id === selectedSurveyId);
   const hasSelection = !!selectedSurveyId;
+  const canExport = !!selectedSurvey && !isLoading && ranking.length > 0;
+
+  const handleExport = async () => {
+    if (!canExport || !selectedSurvey || isExporting) return;
+    setIsExporting(true);
+    try {
+      await generateRankingPDF(selectedSurvey, ranking);
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   useEffect(() => {
     setIsAnimationActive(false);
@@ -23,7 +37,10 @@ export default function Ranking() {
         surveys={surveys}
         selectedSurveyId={selectedSurveyId}
         isSurveysLoading={isSurveysLoading}
+        canExport={canExport}
+        isExporting={isExporting}
         onSurveyChange={setSelectedSurveyId}
+        onExport={handleExport}
       />
 
       {isLoading && hasSelection ? (

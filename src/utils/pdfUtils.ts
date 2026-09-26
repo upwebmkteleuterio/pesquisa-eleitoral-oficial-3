@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Submission, Survey, Researcher, DemographicOption, ReportMergeCardData, VirtualReportCardData, TemporalReportData, TemporalReportFilters } from '../types';
+import type { RankedResearcher } from '../hooks/useRankingData';
 import { aggregateQuestionResponses } from './responseNormalization';
 import { addTemporalVisualizationPages } from './temporalPdfCharts';
 import type { TemporalChartCapture } from './temporalPdfCapture';
@@ -132,7 +133,13 @@ export const generateInterviewPDF = (
   doc.save(fileName);
 };
 
-const loadResearcherAvatar = (source: string): Promise<string> => new Promise((resolve, reject) => {
+interface LoadedResearcherAvatar {
+  dataUrl: string;
+  width: number;
+  height: number;
+}
+
+const loadResearcherAvatarData = (source: string): Promise<LoadedResearcherAvatar> => new Promise((resolve, reject) => {
   const image = new Image();
   image.crossOrigin = 'anonymous';
   image.onload = () => {
@@ -152,7 +159,7 @@ const loadResearcherAvatar = (source: string): Promise<string> => new Promise((r
     }
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
     try {
-      resolve(canvas.toDataURL('image/jpeg', 0.85));
+      resolve({ dataUrl: canvas.toDataURL('image/jpeg', 0.85), width: canvas.width, height: canvas.height });
     } catch {
       reject(new Error('Não foi possível converter a foto do pesquisador.'));
     }
@@ -160,6 +167,10 @@ const loadResearcherAvatar = (source: string): Promise<string> => new Promise((r
   image.onerror = () => reject(new Error('Não foi possível carregar a foto do pesquisador.'));
   image.src = source;
 });
+
+const loadResearcherAvatar = (source: string): Promise<string> => (
+  loadResearcherAvatarData(source).then(avatar => avatar.dataUrl)
+);
 
 export const generateResearchersPDF = async (researchers: Researcher[]): Promise<void> => {
   const avatarEntries = await Promise.all(
@@ -224,6 +235,142 @@ export const generateResearchersPDF = async (researchers: Researcher[]): Promise
   }
 
   doc.save(`pesquisadores_${new Date().toISOString().slice(0, 10)}.pdf`);
+};
+
+export const generateRankingPDF = async (survey: Survey, ranking: RankedResearcher[]): Promise<void> => {
+  const avatarEntries = await Promise.all(
+    ranking.map(async researcher => {
+      if (!researcher.foto_avatar_url) return [researcher.id, null] as const;
+      try {
+        return [researcher.id, await loadResearcherAvatarData(researcher.foto_avatar_url)] as const;
+      } catch {
+        return [researcher.id, null] as const;
+      }
+    })
+  );
+  const avatars = new Map(avatarEntries);
+  const doc = new jsPDF({ format: 'a4', orientation: 'portrait' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const generatedAt = new Date();
+  const dateLabel = format(generatedAt, 'dd/MM/yyyy HH:mm', { locale: ptBR });
+  const maxCount = Math.max(...ranking.map(researcher => researcher.collectionCount), 1);
+  const rowHeight = 31;
+  const marginX = 15;
+
+  const drawPageHeader = (continuation: boolean) => {
+    doc.setFillColor(5, 50, 97);
+    doc.rect(0, 0, pageWidth, 45, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    const surveyLines = doc.splitTextToSize(survey.nome || 'Pesquisa sem nome', pageWidth - 76).slice(0, 2);
+    doc.text(surveyLines, marginX, 12);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text('RANKING DE PRODUTIVIDADE', marginX, 38);
+    doc.text(continuation ? 'Continuação' : `Gerado em ${dateLabel}`, pageWidth - marginX, 13, { align: 'right' });
+    doc.text(`${ranking.length} participante${ranking.length === 1 ? '' : 's'}`, pageWidth - marginX, 23, { align: 'right' });
+    return 53;
+  };
+
+  const positionColor = (position: number): [number, number, number] => {
+    if (position === 1) return [234, 179, 8];
+    if (position === 2) return [148, 163, 184];
+    if (position === 3) return [217, 119, 6];
+    return [0, 182, 122];
+  };
+
+  const drawAvatar = (avatar: LoadedResearcherAvatar | null, x: number, y: number) => {
+    doc.setFillColor(230, 248, 242);
+    doc.roundedRect(x, y, 18, 18, 3, 3, 'F');
+    if (!avatar) return;
+    const scale = Math.min(18 / avatar.width, 18 / avatar.height);
+    const width = avatar.width * scale;
+    const height = avatar.height * scale;
+    doc.addImage(avatar.dataUrl, 'JPEG', x + (18 - width) / 2, y + (18 - height) / 2, width, height);
+  };
+
+  const drawPositionBadge = (position: number, x: number, y: number) => {
+    const color = positionColor(position);
+    doc.setFillColor(...color);
+    doc.circle(x, y, 7, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(position > 9 ? 8 : 10);
+    doc.text(String(position), x, y + 1.5, { align: 'center' });
+    if (position <= 3) {
+      doc.setDrawColor(...color);
+      doc.setLineWidth(0.8);
+      doc.circle(x, y, 8.5, 'S');
+    }
+  };
+
+  let currentY = drawPageHeader(false);
+  ranking.forEach((researcher, index) => {
+    const position = index + 1;
+    if (currentY + rowHeight > pageHeight - 20) {
+      doc.addPage();
+      currentY = drawPageHeader(true);
+    }
+
+    const color = positionColor(position);
+    const rowTop = currentY;
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.25);
+    doc.roundedRect(marginX, rowTop, pageWidth - marginX * 2, rowHeight - 3, 3, 3, 'FD');
+    drawPositionBadge(position, 25, rowTop + 12);
+    drawAvatar(avatars.get(researcher.id) || null, 38, rowTop + 3);
+
+    const contentX = 61;
+    const contentWidth = 103;
+    doc.setTextColor(15, 23, 42);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    const nameLines = doc.splitTextToSize(researcher.nome || 'Sem nome', contentWidth).slice(0, 1);
+    doc.text(nameLines, contentX, rowTop + 8);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(71, 85, 105);
+    const contact = `${researcher.email || '-'}  •  CPF: ${researcher.cpf || '-'}`;
+    doc.text(doc.splitTextToSize(contact, contentWidth).slice(0, 1), contentX, rowTop + 14);
+
+    const progressWidth = 103;
+    const progress = Math.min(1, researcher.collectionCount / maxCount);
+    doc.setFillColor(226, 232, 240);
+    doc.roundedRect(contentX, rowTop + 21, progressWidth, 3.5, 1.75, 1.75, 'F');
+    doc.setFillColor(...color);
+    doc.roundedRect(contentX, rowTop + 21, progressWidth * progress, 3.5, 1.75, 1.75, 'F');
+
+    doc.setTextColor(15, 23, 42);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(17);
+    doc.text(String(researcher.collectionCount), pageWidth - 18, rowTop + 12, { align: 'right' });
+    doc.setTextColor(100, 116, 139);
+    doc.setFontSize(7);
+    doc.text('COLETAS', pageWidth - 18, rowTop + 18, { align: 'right' });
+    currentY += rowHeight;
+  });
+
+  const pageCount = (doc.internal as any).getNumberOfPages();
+  for (let page = 1; page <= pageCount; page++) {
+    doc.setPage(page);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.25);
+    doc.line(marginX, pageHeight - 14, pageWidth - marginX, pageHeight - 14);
+    doc.setTextColor(100, 116, 139);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text(`Veraxus - ${dateLabel}`, marginX, pageHeight - 7);
+    doc.text(`Página ${page} de ${pageCount}`, pageWidth - marginX, pageHeight - 7, { align: 'right' });
+  }
+
+  const safeName = (survey.nome || 'pesquisa')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase() || 'pesquisa';
+  doc.save(`ranking_${safeName}_${format(generatedAt, 'yyyy-MM-dd')}.pdf`);
 };
 
 const REPORT_LABELS: Record<string, Record<string, string>> = {

@@ -230,6 +230,35 @@ export interface TemporalQuestionDefinition {
   labels?: Record<string, string>;
 }
 
+export interface TemporalQuestionSource {
+  surveyId: string;
+  question: TemporalQuestionDefinition;
+}
+
+export interface TemporalQuestionGroup {
+  id: string;
+  key: string;
+  label: string;
+  sources: TemporalQuestionSource[];
+}
+
+export interface TemporalReportSource {
+  surveyId: string;
+  surveyName: string;
+  regionLabel?: string;
+  submissions: Submission[];
+  question: TemporalQuestionDefinition;
+}
+
+export interface TemporalRegionalSlice {
+  surveyId: string;
+  surveyName: string;
+  regionLabel?: string;
+  count: number;
+  percentage: number;
+  total: number;
+}
+
 export interface TemporalReportFilters {
   questionId: string;
   answerValues: string[];
@@ -267,4 +296,5 @@ export interface TemporalReportData {
   answerOptions: TemporalAnswerOption[];
   points: TemporalDataPoint[];
   totalResponses: number;
+  regionalBreakdowns?: Record<string, TemporalRegionalSlice[]>;
 }

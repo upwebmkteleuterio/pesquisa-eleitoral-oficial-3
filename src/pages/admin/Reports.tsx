@@ -98,7 +98,15 @@ export default function Reports() {
   const [virtualConfigModal, setVirtualConfigModal] = useState<{ mode: "save" | "delete"; config?: VirtualReportMergeConfig } | null>(null);
   const [chartType, setChartType] = useState<ChartType>('horizontal');
   const [reportMode, setReportMode] = useState<'distribution' | 'temporal'>('distribution');
-  const [temporalSurveyId, setTemporalSurveyId] = useState<string>(() => searchParams.get('id') || "");
+  const [temporalSurveyIds, setTemporalSurveyIds] = useState<string[]>(() => {
+    const id = searchParams.get('id');
+    return id ? [id] : [];
+  });
+  const [temporalPendingSurveyIds, setTemporalPendingSurveyIds] = useState<string[]>(() => {
+    const id = searchParams.get('id');
+    return id ? [id] : [];
+  });
+  const [temporalSurveySelectorOpen, setTemporalSurveySelectorOpen] = useState(false);
   const [mergeQuestionId, setMergeQuestionId] = useState<string | null>(null);
   const [reportMergeModalOpen, setReportMergeModalOpen] = useState(false);
   const [editingReportMerge, setEditingReportMerge] = useState<ReportMergeConfig | null>(null);
@@ -200,21 +208,29 @@ export default function Reports() {
     queryFn: () => surveyOptionImageService.getForSurvey(selectedSurveyId),
     enabled: !!selectedSurveyId,
   });
-  const { data: temporalOptionImages = [] } = useQuery<SurveyOptionImageMetadata[]>({
-    queryKey: ['survey-option-images', temporalSurveyId],
-    queryFn: () => surveyOptionImageService.getForSurvey(temporalSurveyId),
-    enabled: reportMode === 'temporal' && !!temporalSurveyId && !!surveys?.some(survey => survey.id === temporalSurveyId),
-  });
-  const { data: temporalSubmissions, isLoading: isTemporalLoading, isError: isTemporalError, error: temporalError } = useQuery({
-    queryKey: ['submissions', user?.id || 'anonymous', temporalSurveyId, 'valid', 'temporal'],
-    queryFn: () => submissionService.getBySurveyIdAll(temporalSurveyId, true, profile?.role === 'cliente' ? user?.id : undefined, isClient),
-    enabled: reportMode === 'temporal' && !!temporalSurveyId && (!isClient || surveys?.some(survey => survey.id === temporalSurveyId)),
-  });
-  const temporalSurvey = surveys?.find(survey => survey.id === temporalSurveyId);
+  const temporalSubmissionQueries = useQueries({ queries: temporalSurveyIds.map(surveyId => ({
+    queryKey: ['submissions', user?.id || 'anonymous', surveyId, 'valid', 'temporal'],
+    queryFn: () => submissionService.getBySurveyIdAll(surveyId, true, isClient ? user?.id : undefined, isClient),
+    enabled: reportMode === 'temporal' && !!user && (!isClient || surveys?.some(survey => survey.id === surveyId)),
+  })) });
+  const temporalSubmissionsBySurvey = useMemo(() => Object.fromEntries(temporalSurveyIds.map((id, index) => [id, temporalSubmissionQueries[index]?.data || []])), [temporalSurveyIds, temporalSubmissionQueries]);
+  const temporalOptionImageQueries = useQueries({ queries: temporalSurveyIds.map(surveyId => ({
+    queryKey: ['survey-option-images', surveyId],
+    queryFn: () => surveyOptionImageService.getForSurvey(surveyId),
+    enabled: reportMode === 'temporal' && !!surveyId,
+  })) });
+  const temporalOptionImages = useMemo(() => temporalOptionImageQueries.flatMap(query => query.data || []), [temporalOptionImageQueries]);
+  const isTemporalLoading = temporalSubmissionQueries.some(query => query.isLoading);
+  const temporalError = temporalSubmissionQueries.find(query => query.error)?.error;
+  const isTemporalError = Boolean(temporalError);
 
   useEffect(() => {
-    if (!temporalSurveyId && surveys?.length) setTemporalSurveyId(selectedSurveyId || surveys[0].id);
-  }, [selectedSurveyId, surveys, temporalSurveyId]);
+    if (!temporalSurveyIds.length && surveys?.length) {
+      const initialId = selectedSurveyId && surveys.some(survey => survey.id === selectedSurveyId) ? selectedSurveyId : surveys[0].id;
+      setTemporalSurveyIds([initialId]);
+      setTemporalPendingSurveyIds([initialId]);
+    }
+  }, [selectedSurveyId, surveys, temporalSurveyIds.length]);
 
   const reportMergeQueryKey = ['report-merges', user?.id || 'anonymous', selectedSurveyId];
   const { data: reportMerges = [] } = useQuery({
@@ -424,6 +440,27 @@ export default function Reports() {
   const handleCancelSurveySelection = () => {
     setSurveySelectorOpen(false);
     setPendingSurveyIds(selectedSurveyIds);
+  };
+
+  const handleOpenTemporalSurveySelection = () => {
+    setTemporalPendingSurveyIds(temporalSurveyIds);
+    setTemporalSurveySelectorOpen(true);
+  };
+
+  const handleToggleTemporalSurvey = (surveyId: string) => {
+    setTemporalPendingSurveyIds(current => current.includes(surveyId) ? current.filter(id => id !== surveyId) : [...current, surveyId]);
+  };
+
+  const handleCancelTemporalSurveySelection = () => {
+    setTemporalPendingSurveyIds(temporalSurveyIds);
+    setTemporalSurveySelectorOpen(false);
+  };
+
+  const handleConfirmTemporalSurveySelection = () => {
+    const allowed = temporalPendingSurveyIds.filter(id => surveys?.some(survey => survey.id === id));
+    setTemporalSurveyIds(allowed);
+    setTemporalPendingSurveyIds(allowed);
+    setTemporalSurveySelectorOpen(false);
   };
 
   const handleConfirmSurveySelection = () => {
@@ -853,13 +890,17 @@ export default function Reports() {
       </div>}
       </> : <TemporalReport
         surveys={surveys || []}
-        surveyId={temporalSurveyId}
-        survey={temporalSurvey}
-        submissions={temporalSubmissions}
+        selectedSurveyIds={temporalSurveyIds}
+        pendingSurveyIds={temporalPendingSurveyIds}
+        surveySelectorOpen={temporalSurveySelectorOpen}
+        submissionsBySurvey={temporalSubmissionsBySurvey}
         optionImages={temporalOptionImages}
         isLoading={isTemporalLoading}
         error={isTemporalError ? (temporalError instanceof Error ? temporalError.message : "Não foi possível carregar as respostas.") : null}
-        onSurveyChange={setTemporalSurveyId}
+        onSurveyOpen={handleOpenTemporalSurveySelection}
+        onSurveyToggle={handleToggleTemporalSurvey}
+        onSurveyCancel={handleCancelTemporalSurveySelection}
+        onSurveyConfirm={handleConfirmTemporalSurveySelection}
       />}
 
       <ReportMergeModal

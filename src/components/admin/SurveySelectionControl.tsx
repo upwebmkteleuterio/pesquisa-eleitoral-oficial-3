@@ -10,6 +10,7 @@ interface Props {
   onToggle: (surveyId: string) => void;
   onCancel: () => void;
   onConfirm: () => void;
+  label?: string;
 }
 
 export function SurveySelectionControl({
@@ -21,6 +22,7 @@ export function SurveySelectionControl({
   onToggle,
   onCancel,
   onConfirm,
+  label = "Pesquisas do resultado",
 }: Props) {
   const selectionLabel = selectedSurveyIds.length
     ? `${selectedSurveyIds.length} selecionada${selectedSurveyIds.length === 1 ? "" : "s"}`
@@ -36,7 +38,7 @@ export function SurveySelectionControl({
         className="inline-flex min-h-12 items-center gap-3 rounded-2xl border border-outline bg-white px-4 py-3 text-left text-sm font-black text-on-surface shadow-sm transition hover:border-primary dark:bg-slate-900"
       >
         <span className="min-w-0">
-          <span className="block text-[10px] font-black uppercase tracking-widest text-primary">Pesquisas do resultado</span>
+          <span className="block text-[10px] font-black uppercase tracking-widest text-primary">{label}</span>
           <span className="mt-1 block truncate text-xs text-on-surface-variant">{selectionLabel}</span>
         </span>
         <ChevronDown size={18} className={isOpen ? "rotate-180 transition-transform" : "transition-transform"} aria-hidden="true" />
@@ -45,7 +47,7 @@ export function SurveySelectionControl({
       {isOpen && (
         <div role="dialog" aria-label="Selecionar pesquisas" className="absolute left-0 top-full z-30 mt-2 w-[min(22rem,calc(100vw-3rem))] rounded-2xl border border-outline bg-white p-3 shadow-2xl dark:bg-slate-900">
           <div className="mb-2 flex items-center justify-between gap-3 px-1">
-            <p className="text-xs font-black text-on-surface">Pesquisas do resultado</p>
+            <p className="text-xs font-black text-on-surface">{label}</p>
             <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">{pendingSurveyIds.length} selecionadas</span>
           </div>
           <div className="max-h-64 space-y-1 overflow-y-auto" role="group" aria-label="Pesquisas disponíveis">

@@ -9,7 +9,7 @@ import { TemporalHeatmap } from './TemporalHeatmap';
 import { TemporalReportChart } from './TemporalReportChart';
 import { TemporalReportFilters as TemporalFilters } from './TemporalReportFilters';
 import { TemporalReportTable } from './TemporalReportTable';
-import { TemporalRegionalDonut } from './TemporalRegionalDonut';
+import { TemporalRegionalDonut, TemporalRegionalDonutExport } from './TemporalRegionalDonut';
 
 interface Props {
   surveys: Survey[];
@@ -45,6 +45,7 @@ export function TemporalReport({ surveys, selectedSurveyIds, pendingSurveyIds, s
     ? buildCombinedTemporalReport(reportSources, selectedQuestion, filters)
     : { answerOptions: [], points: [], totalResponses: 0 }, [filters, reportSources, selectedQuestion]);
   const chartCaptureRef = useRef<HTMLDivElement>(null);
+  const regionalCaptureRef = useRef<HTMLDivElement>(null);
   const previousQuestionIdRef = useRef('');
   const previousOptionValuesRef = useRef<string[]>([]);
   const [isExporting, setIsExporting] = useState(false);
@@ -52,6 +53,7 @@ export function TemporalReport({ surveys, selectedSurveyIds, pendingSurveyIds, s
   const selectedSurvey = selectedSurveys[0];
   const pdfSurvey = selectedSurvey ? { ...selectedSurvey, nome: selectedSurveys.map(survey => survey.nome).join(' + ') } : undefined;
   const canExport = !!pdfSurvey && !!selectedQuestion && !hasInvalidDateRange && report.points.length > 0 && report.answerOptions.length > 0;
+  const hasRegionalData = Boolean(report.regionalBreakdowns && Object.values(report.regionalBreakdowns).some(slices => Array.isArray(slices) && slices.some(slice => slice.total > 0)));
   const exportChartWidth = 1400;
   const exportChartHeight = filters.chartType === 'line' ? 576 : 448;
 
@@ -93,8 +95,12 @@ export function TemporalReport({ surveys, selectedSurveyIds, pendingSurveyIds, s
     setIsExporting(true);
     try {
       let chartCapture = null;
+      let regionalCapture = null;
       try { chartCapture = await captureTemporalChart(chartCaptureRef.current); } catch { chartCapture = null; }
-      await generateTemporalReportPDF(pdfSurvey, selectedQuestion.label, filters, report, chartCapture || undefined);
+      if (hasRegionalData) {
+        try { regionalCapture = await captureTemporalChart(regionalCaptureRef.current, '[data-temporal-regional-pdf-export]'); } catch { regionalCapture = null; }
+      }
+      await generateTemporalReportPDF(pdfSurvey, selectedQuestion.label, filters, report, chartCapture || undefined, regionalCapture || undefined);
     } finally { setIsExporting(false); }
   };
 
@@ -111,7 +117,10 @@ export function TemporalReport({ surveys, selectedSurveyIds, pendingSurveyIds, s
         <div className="relative flex flex-col gap-4 sm:block"><div className="order-first flex items-center justify-end gap-2 sm:absolute sm:right-0 sm:top-0"><span className="rounded-xl bg-primary/10 px-3 py-2 text-xs font-black text-primary">{filters.grouping === 'day' ? 'Por dia' : filters.grouping === 'week' ? 'Por semana' : 'Por mês'}</span><button type="button" onClick={handleExport} disabled={!canExport || isExporting} className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-black text-white transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40" title="Imprimir relatório temporal em PDF"><FileDown size={16} />{isExporting ? 'Gerando...' : 'Imprimir PDF'}</button></div><div className="order-last min-w-0 rounded-2xl bg-white"><div className="sm:pr-56"><h2 className="text-xl font-black text-on-surface">Evolução no tempo</h2><p className="text-sm font-bold text-on-surface-variant">{report.totalResponses.toLocaleString('pt-BR')} respostas válidas no período</p></div><TemporalReportChart points={report.points} answerOptions={report.answerOptions} optionImages={optionImages} questionId={selectedQuestion?.id} displayMode={filters.displayMode} chartType={filters.chartType} /></div><div ref={chartCaptureRef} data-temporal-pdf-export="true" aria-hidden="true" style={{ position: 'fixed', left: '-10000px', top: 0, width: `${exportChartWidth}px`, height: `${exportChartHeight + 56}px`, overflow: 'hidden', backgroundColor: '#ffffff', pointerEvents: 'none' }}><div><h2 className="text-xl font-black text-on-surface">Evolução no tempo</h2><p className="text-sm font-bold text-on-surface-variant">{report.totalResponses.toLocaleString('pt-BR')} respostas válidas no período</p></div><TemporalReportChart points={report.points} answerOptions={report.answerOptions} optionImages={optionImages} questionId={selectedQuestion?.id} displayMode={filters.displayMode} chartType={filters.chartType} fixedDimensions={{ width: exportChartWidth, height: exportChartHeight }} /></div></div>
         <TemporalGroupedBarChart points={report.points} answerOptions={report.answerOptions} displayMode={filters.displayMode} /><TemporalHeatmap points={report.points} answerOptions={report.answerOptions} displayMode={filters.displayMode} /><TemporalReportTable points={report.points} answerOptions={report.answerOptions} optionImages={optionImages} questionId={selectedQuestion?.id} />
       </section>
-      {selectedSurveyIds.length > 1 && report.regionalBreakdowns && <TemporalRegionalDonut answerOptions={report.answerOptions} regionalBreakdowns={report.regionalBreakdowns} />}
+      {selectedSurveyIds.length > 1 && report.regionalBreakdowns && <>
+        <TemporalRegionalDonut answerOptions={report.answerOptions} regionalBreakdowns={report.regionalBreakdowns} />
+        {hasRegionalData && <TemporalRegionalDonutExport exportRef={regionalCaptureRef} answerOptions={report.answerOptions} regionalBreakdowns={report.regionalBreakdowns} />}
+      </>}
     </>}
   </div>;
 }

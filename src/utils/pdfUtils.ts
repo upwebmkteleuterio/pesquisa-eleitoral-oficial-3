@@ -997,6 +997,7 @@ export const generateTemporalReportPDF = async (
   filters: TemporalReportFilters,
   report: TemporalReportData,
   chartCapture?: TemporalChartCapture,
+  regionalCapture?: TemporalChartCapture,
 ) => {
   if (report.points.length === 0 || report.answerOptions.length === 0) return;
   const cover = await loadReportCover('/assets/veraxus-pesquisas-capa-temporal.png');
@@ -1048,6 +1049,27 @@ export const generateTemporalReportPDF = async (
   }
 
   addTemporalVisualizationPages(doc, report, filters.displayMode);
+
+  if (regionalCapture && regionalCapture.width > 0 && regionalCapture.height > 0) {
+    doc.addPage();
+    doc.setTextColor(5, 50, 97);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.text('VISUALIZAÇÃO TEMPORAL · PESQUISA / REGIÃO', margin, 18);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(90, 90, 90);
+    doc.text('Cada resultado apresenta o donut completo e sua legenda com pesquisa, região, quantidade e percentual.', margin, 26);
+
+    const imageTop = 34;
+    const maxWidth = pageWidth - margin * 2;
+    const maxHeight = pageHeight - imageTop - 14;
+    const aspectRatio = regionalCapture.width / regionalCapture.height;
+    const imageWidth = Math.min(maxWidth, maxHeight * aspectRatio);
+    const imageHeight = imageWidth / aspectRatio;
+    doc.addImage(regionalCapture.dataUrl, 'PNG', margin + (maxWidth - imageWidth) / 2, imageTop, imageWidth, imageHeight);
+  }
+
   doc.addPage();
 
   if (report.points.length > 10) {

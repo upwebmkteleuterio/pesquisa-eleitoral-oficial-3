@@ -34,6 +34,16 @@ const waitForAnimationFrames = async (count: number): Promise<void> => {
   }
 };
 
+const waitForRenderedContent = async (target: HTMLElement): Promise<void> => {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    if (target.querySelector('svg')) {
+      await waitForAnimationFrames(2);
+      return;
+    }
+    await waitForAnimationFrames(1);
+  }
+};
+
 const hasRenderedContent = (canvas: HTMLCanvasElement): boolean => {
   const context = canvas.getContext('2d', { willReadFrequently: true });
   if (!context) return false;
@@ -149,11 +159,15 @@ const replacePhotoForeignObjects = (target: HTMLElement, embeddedSources: Map<st
   });
 };
 
-export const captureTemporalChart = async (target: HTMLElement | null): Promise<TemporalChartCapture | null> => {
+export const captureTemporalChart = async (
+  target: HTMLElement | null,
+  captureSelector = '[data-temporal-pdf-export]',
+): Promise<TemporalChartCapture | null> => {
   if (!target || typeof window === 'undefined') return null;
 
   try {
     await waitForAnimationFrames(2);
+    await waitForRenderedContent(target);
     const bounds = target.getBoundingClientRect();
     if (bounds.width <= 0 || bounds.height <= 0) return null;
 
@@ -166,7 +180,7 @@ export const captureTemporalChart = async (target: HTMLElement | null): Promise<
       imageTimeout: 15000,
       logging: false,
       onclone: clonedDocument => {
-        const clonedTarget = clonedDocument.querySelector<HTMLElement>('[data-temporal-pdf-export]');
+        const clonedTarget = clonedDocument.querySelector<HTMLElement>(captureSelector);
         if (!clonedTarget) return;
         clonedTarget.style.position = 'fixed';
         clonedTarget.style.left = '0';

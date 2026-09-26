@@ -136,6 +136,10 @@ const loadResearcherAvatar = (source: string): Promise<string> => new Promise((r
   const image = new Image();
   image.crossOrigin = 'anonymous';
   image.onload = () => {
+    if (!image.naturalWidth || !image.naturalHeight) {
+      reject(new Error('A foto do pesquisador não possui dimensões válidas.'));
+      return;
+    }
     const maxDimension = 256;
     const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
     const canvas = document.createElement('canvas');

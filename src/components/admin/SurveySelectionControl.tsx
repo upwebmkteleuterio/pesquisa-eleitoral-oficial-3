@@ -11,6 +11,7 @@ interface Props {
   onCancel: () => void;
   onConfirm: () => void;
   label?: string;
+  emptySelectionLabel?: string;
   className?: string;
 }
 
@@ -24,11 +25,12 @@ export function SurveySelectionControl({
   onCancel,
   onConfirm,
   label = "Pesquisas do resultado",
+  emptySelectionLabel = "Nenhuma selecionada",
   className = "",
 }: Props) {
   const selectionLabel = selectedSurveyIds.length
     ? `${selectedSurveyIds.length} selecionada${selectedSurveyIds.length === 1 ? "" : "s"}`
-    : "Nenhuma selecionada";
+    : emptySelectionLabel;
 
   return (
     <div className={`relative shrink-0 ${className}`}>

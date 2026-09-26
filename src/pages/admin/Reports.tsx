@@ -227,14 +227,6 @@ export default function Reports() {
   const temporalError = temporalSubmissionQueries.find(query => query.error)?.error;
   const isTemporalError = Boolean(temporalError);
 
-  useEffect(() => {
-    if (!temporalSurveyIds.length && surveys?.length) {
-      const initialId = selectedSurveyId && surveys.some(survey => survey.id === selectedSurveyId) ? selectedSurveyId : surveys[0].id;
-      setTemporalSurveyIds([initialId]);
-      setTemporalPendingSurveyIds([initialId]);
-    }
-  }, [selectedSurveyId, surveys, temporalSurveyIds.length]);
-
   const reportMergeQueryKey = ['report-merges', user?.id || 'anonymous', selectedSurveyId];
   const { data: reportMerges = [] } = useQuery({
     queryKey: reportMergeQueryKey,

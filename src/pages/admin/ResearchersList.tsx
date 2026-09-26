@@ -1,9 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { userService } from "../../services/userService";
 import { submissionService } from "../../services/submissionService";
-import { Plus, Search, MoreVertical, Edit2, Trash2, Mail, CreditCard, AlertTriangle, X, UserPlus, ArrowRight } from "lucide-react";
+import { Plus, Search, MoreVertical, Edit2, Trash2, Mail, CreditCard, AlertTriangle, X, UserPlus, ArrowRight, FileDown } from "lucide-react";
 import { useState } from "react";
 import { ResearcherForm } from "./ResearcherForm";
+import { generateResearchersPDF } from "../../utils/pdfUtils";
 import { Researcher } from "../../types";
 import { motion, AnimatePresence } from "motion/react";
 import { cn } from "../../lib/utils";
@@ -14,6 +15,7 @@ export default function ResearchersList() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isFormOpen, setFormOpen] = useState(false);
   const [editingResearcher, setEditingResearcher] = useState<Researcher | undefined>(undefined);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   
   // Deletion states
   const [researcherToDelete, setResearcherToDelete] = useState<Researcher | null>(null);
@@ -65,6 +67,16 @@ export default function ResearchersList() {
     setFormOpen(true);
   };
 
+  const handleDownloadPdf = async () => {
+    if (isGeneratingPdf) return;
+    setIsGeneratingPdf(true);
+    try {
+      await generateResearchersPDF(filteredResearchers ?? []);
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
   const confirmDelete = () => {
     if (!researcherToDelete) return;
     if (hasSubmissions && !targetResearcherId) {
@@ -94,15 +106,26 @@ export default function ResearchersList() {
       </div>
 
       <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-outline">
-        <div className="relative mb-6">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant" size={20} />
-          <input 
-            type="text" 
-            placeholder="Buscar por nome, email ou CPF..." 
-            className="w-full pl-12 pr-4 py-4 bg-slate-50 dark:bg-slate-800/50 border border-outline rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-medium"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+        <div className="flex flex-col sm:flex-row gap-3 mb-6">
+          <div className="relative flex-1">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant" size={20} />
+            <input
+              type="text"
+              placeholder="Buscar por nome, email ou CPF..."
+              className="w-full pl-12 pr-4 py-4 bg-slate-50 dark:bg-slate-800/50 border border-outline rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-medium"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={handleDownloadPdf}
+            disabled={isGeneratingPdf}
+            className="flex items-center justify-center gap-2 px-5 py-4 bg-primary text-white rounded-2xl font-bold shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100"
+          >
+            <FileDown size={20} />
+            {isGeneratingPdf ? "Gerando PDF..." : "Baixar PDF"}
+          </button>
         </div>
 
         <div className="overflow-x-auto">

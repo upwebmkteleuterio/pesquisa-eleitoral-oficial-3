@@ -132,6 +132,96 @@ export const generateInterviewPDF = (
   doc.save(fileName);
 };
 
+const loadResearcherAvatar = (source: string): Promise<string> => new Promise((resolve, reject) => {
+  const image = new Image();
+  image.crossOrigin = 'anonymous';
+  image.onload = () => {
+    const maxDimension = 256;
+    const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext('2d');
+    if (!context) {
+      reject(new Error('Não foi possível preparar a foto do pesquisador.'));
+      return;
+    }
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    try {
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
+    } catch {
+      reject(new Error('Não foi possível converter a foto do pesquisador.'));
+    }
+  };
+  image.onerror = () => reject(new Error('Não foi possível carregar a foto do pesquisador.'));
+  image.src = source;
+});
+
+export const generateResearchersPDF = async (researchers: Researcher[]): Promise<void> => {
+  const avatarEntries = await Promise.all(
+    researchers.map(async researcher => {
+      if (!researcher.foto_avatar_url) return [researcher.id, null] as const;
+      try {
+        return [researcher.id, await loadResearcherAvatar(researcher.foto_avatar_url)] as const;
+      } catch {
+        return [researcher.id, null] as const;
+      }
+    })
+  );
+  const avatars = new Map(avatarEntries);
+  const doc = new jsPDF({ format: 'a4', orientation: 'portrait' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  doc.setFillColor(5, 50, 97);
+  doc.rect(0, 0, pageWidth, 30, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(18);
+  doc.text('LISTA DE PESQUISADORES', 15, 14);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(`Pesquisadores exibidos: ${researchers.length}`, 15, 23);
+
+  doc.setTextColor(0, 0, 0);
+  autoTable(doc, {
+    startY: 40,
+    head: [['Pesquisador', 'E-mail de contato', 'CPF']],
+    body: researchers.map(researcher => [researcher.nome, researcher.email, researcher.cpf]),
+    theme: 'grid',
+    margin: { top: 36, bottom: 18, left: 15, right: 15 },
+    showHead: 'everyPage',
+    headStyles: { fillColor: [5, 50, 97], textColor: [255, 255, 255], fontStyle: 'bold' },
+    styles: { fontSize: 9, cellPadding: 3, minCellHeight: 16, overflow: 'linebreak', valign: 'middle' },
+    columnStyles: { 0: { cellWidth: 85, cellPadding: { top: 3, right: 3, bottom: 3, left: 16 } }, 1: { cellWidth: 60 }, 2: { cellWidth: 32 } },
+    didDrawCell: data => {
+      if (data.section !== 'body' || data.column.index !== 0) return;
+      const researcher = researchers[data.row.index];
+      const avatar = researcher ? avatars.get(researcher.id) : null;
+      if (!avatar) return;
+      doc.addImage(avatar, 'JPEG', data.cell.x + 3, data.cell.y + (data.cell.height - 10) / 2, 10, 10);
+    },
+  });
+
+  if (researchers.length === 0) {
+    doc.setTextColor(110, 110, 110);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.text('Nenhum pesquisador encontrado para os filtros atuais.', pageWidth / 2, 58, { align: 'center' });
+  }
+
+  const pageCount = (doc.internal as any).getNumberOfPages();
+  for (let page = 1; page <= pageCount; page++) {
+    doc.setPage(page);
+    doc.setTextColor(110, 110, 110);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text(`Gerado em ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: ptBR })} - Página ${page} de ${pageCount}`, pageWidth / 2, pageHeight - 8, { align: 'center' });
+  }
+
+  doc.save(`pesquisadores_${new Date().toISOString().slice(0, 10)}.pdf`);
+};
+
 const REPORT_LABELS: Record<string, Record<string, string>> = {
   sexo: { masculino: 'Masculino', feminino: 'Feminino', outro: 'Outro' },
   faixa_etaria: { '16-24': '16-24 anos', '25-34': '25-34 anos', '35-44': '35-44 anos', '45-59': '45-59 anos', '60+': '60+ anos' },

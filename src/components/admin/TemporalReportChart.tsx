@@ -43,7 +43,13 @@ export function TemporalReportChart({ points, answerOptions, optionImages, quest
 
   return (
     <div className={`${chartClassName} w-full min-w-0`} style={chartStyle}>
-      <ResponsiveContainer width={fixedDimensions?.width || '100%'} height={fixedDimensions?.height || '100%'}>
+      <ResponsiveContainer
+        width={fixedDimensions?.width || '100%'}
+        height={fixedDimensions?.height || '100%'}
+        minWidth={1}
+        minHeight={1}
+        initialDimension={{ width: fixedDimensions?.width || 600, height: fixedDimensions?.height || (chartType === 'line' ? 576 : 448) }}
+      >
         <Chart data={data} margin={{ top: chartType === 'bar' ? 56 : 48, right: 12, left: 0, bottom: 8 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
           <XAxis dataKey="label" padding={chartType === 'line' ? { left: 40, right: 40 } : undefined} axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} minTickGap={24} />

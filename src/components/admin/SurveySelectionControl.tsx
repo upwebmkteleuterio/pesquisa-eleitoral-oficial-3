@@ -11,6 +11,7 @@ interface Props {
   onCancel: () => void;
   onConfirm: () => void;
   label?: string;
+  className?: string;
 }
 
 export function SurveySelectionControl({
@@ -23,19 +24,20 @@ export function SurveySelectionControl({
   onCancel,
   onConfirm,
   label = "Pesquisas do resultado",
+  className = "",
 }: Props) {
   const selectionLabel = selectedSurveyIds.length
     ? `${selectedSurveyIds.length} selecionada${selectedSurveyIds.length === 1 ? "" : "s"}`
     : "Nenhuma selecionada";
 
   return (
-    <div className="relative shrink-0">
+    <div className={`relative shrink-0 ${className}`}>
       <button
         type="button"
         onClick={onOpen}
         aria-expanded={isOpen}
         aria-haspopup="dialog"
-        className="inline-flex min-h-12 items-center gap-3 rounded-2xl border border-outline bg-white px-4 py-3 text-left text-sm font-black text-on-surface shadow-sm transition hover:border-primary dark:bg-slate-900"
+        className={`inline-flex min-h-12 items-center gap-3 rounded-2xl border border-outline bg-white px-4 py-3 text-left text-sm font-black text-on-surface shadow-sm transition hover:border-primary dark:bg-slate-900 ${className ? "w-full" : ""}`}
       >
         <span className="min-w-0">
           <span className="block text-[10px] font-black uppercase tracking-widest text-primary">{label}</span>

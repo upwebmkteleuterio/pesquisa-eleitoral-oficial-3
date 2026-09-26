@@ -165,7 +165,8 @@ export default function Reports() {
     queryFn: () => submissionService.getBySurveyIdAll(surveyId, true, isClient ? user?.id : undefined, isClient),
     enabled: !!user && (!isClient || surveys?.some(survey => survey.id === surveyId)),
   })) });
-  const submissionsBySurvey = useMemo(() => Object.fromEntries(selectedSurveyIds.map((id, index) => [id, submissionQueries[index]?.data || []])), [selectedSurveyIds, submissionQueries]);
+  const submissionDataKey = submissionQueries.map(query => query.dataUpdatedAt).join('|');
+  const submissionsBySurvey = useMemo(() => Object.fromEntries(selectedSurveyIds.map((id, index) => [id, submissionQueries[index]?.data || []])), [selectedSurveyIds, submissionDataKey]);
   const allVirtualSubmissions = useMemo(() => selectedSurveyIds.flatMap(id => submissionsBySurvey[id] || []), [selectedSurveyIds, submissionsBySurvey]);
   const isCombinedLoading = submissionQueries.some(query => query.isLoading);
 
@@ -213,13 +214,15 @@ export default function Reports() {
     queryFn: () => submissionService.getBySurveyIdAll(surveyId, true, isClient ? user?.id : undefined, isClient),
     enabled: reportMode === 'temporal' && !!user && (!isClient || surveys?.some(survey => survey.id === surveyId)),
   })) });
-  const temporalSubmissionsBySurvey = useMemo(() => Object.fromEntries(temporalSurveyIds.map((id, index) => [id, temporalSubmissionQueries[index]?.data || []])), [temporalSurveyIds, temporalSubmissionQueries]);
+  const temporalSubmissionDataKey = temporalSubmissionQueries.map(query => query.dataUpdatedAt).join('|');
+  const temporalSubmissionsBySurvey = useMemo(() => Object.fromEntries(temporalSurveyIds.map((id, index) => [id, temporalSubmissionQueries[index]?.data || []])), [temporalSurveyIds, temporalSubmissionDataKey]);
   const temporalOptionImageQueries = useQueries({ queries: temporalSurveyIds.map(surveyId => ({
     queryKey: ['survey-option-images', surveyId],
     queryFn: () => surveyOptionImageService.getForSurvey(surveyId),
     enabled: reportMode === 'temporal' && !!surveyId,
   })) });
-  const temporalOptionImages = useMemo(() => temporalOptionImageQueries.flatMap(query => query.data || []), [temporalOptionImageQueries]);
+  const temporalOptionImageDataKey = temporalOptionImageQueries.map(query => query.dataUpdatedAt).join('|');
+  const temporalOptionImages = useMemo(() => temporalOptionImageQueries.flatMap(query => query.data || []), [temporalSurveyIds, temporalOptionImageDataKey]);
   const isTemporalLoading = temporalSubmissionQueries.some(query => query.isLoading);
   const temporalError = temporalSubmissionQueries.find(query => query.error)?.error;
   const isTemporalError = Boolean(temporalError);

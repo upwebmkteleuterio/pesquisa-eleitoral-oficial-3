@@ -33,7 +33,10 @@ export function TemporalReport({ surveys, selectedSurveyIds, pendingSurveyIds, s
   const selectedSurveys = useMemo(() => selectedSurveyIds.flatMap(id => { const survey = surveys.find(item => item.id === id); return survey ? [survey] : []; }), [selectedSurveyIds, surveys]);
   const questions = useMemo(() => getTemporalQuestionGroups(selectedSurveys.map(survey => ({ surveyId: survey.id, questions: (survey.schema_dinamico?.questions || []) as TemporalQuestionDefinition[] }))), [selectedSurveys]);
   const selectedQuestion = questions.find(question => question.id === filters.questionId);
-  const availableOptions = selectedQuestion ? getTemporalQuestionGroupOptions(selectedQuestion, submissionsBySurvey) : [];
+  const availableOptions = useMemo(() => selectedQuestion ? getTemporalQuestionGroupOptions(selectedQuestion, submissionsBySurvey) : [], [selectedQuestion, submissionsBySurvey]);
+  const optionValues = useMemo(() => availableOptions.map(option => option.value), [availableOptions]);
+  const optionValuesKey = JSON.stringify(optionValues);
+  const questionIdsKey = JSON.stringify(questions.map(question => question.id));
   const reportSources = useMemo<TemporalReportSource[]>(() => selectedQuestion?.sources.flatMap(source => {
     const survey = selectedSurveys.find(item => item.id === source.surveyId);
     return survey ? [{ surveyId: survey.id, surveyName: survey.nome, submissions: submissionsBySurvey[survey.id] || [], question: source.question }] : [];
@@ -42,7 +45,7 @@ export function TemporalReport({ surveys, selectedSurveyIds, pendingSurveyIds, s
     ? buildCombinedTemporalReport(reportSources, selectedQuestion, filters)
     : { answerOptions: [], points: [], totalResponses: 0 }, [filters, reportSources, selectedQuestion]);
   const chartCaptureRef = useRef<HTMLDivElement>(null);
-  const previousSelectionKeyRef = useRef('');
+  const previousQuestionIdRef = useRef('');
   const previousOptionValuesRef = useRef<string[]>([]);
   const [isExporting, setIsExporting] = useState(false);
   const hasInvalidDateRange = Boolean(filters.startDate && filters.endDate && filters.startDate > filters.endDate);
@@ -52,21 +55,30 @@ export function TemporalReport({ surveys, selectedSurveyIds, pendingSurveyIds, s
   const exportChartWidth = 1400;
   const exportChartHeight = filters.chartType === 'line' ? 576 : 448;
 
-  const selectionKey = selectedSurveyIds.join('|');
   useEffect(() => {
-    const selectionChanged = previousSelectionKeyRef.current !== selectionKey;
-    previousSelectionKeyRef.current = selectionKey;
+    const nextQuestion = questions.find(question => question.id === filters.questionId) || questions[0];
+    const nextQuestionId = nextQuestion?.id || '';
+    const previousOptionValues = previousOptionValuesRef.current;
+    const optionsChanged = previousOptionValues.length !== optionValues.length
+      || previousOptionValues.some((value, index) => value !== optionValues[index]);
+    const questionChanged = previousQuestionIdRef.current !== nextQuestionId;
+    previousQuestionIdRef.current = nextQuestionId;
+    previousOptionValuesRef.current = optionValues;
+    if (!questionChanged && !optionsChanged) return;
+
     setFilters(current => {
-      const currentQuestion = questions.find(question => question.id === current.questionId);
-      const nextQuestion = currentQuestion || questions[0];
-      const optionValues = nextQuestion ? getTemporalQuestionGroupOptions(nextQuestion, submissionsBySurvey).map(option => option.value) : [];
-      const canExtendSelection = !selectionChanged && !!currentQuestion && previousOptionValuesRef.current.length > 0
-        && previousOptionValuesRef.current.every(value => current.answerValues.includes(value));
-      previousOptionValuesRef.current = optionValues;
-      if (!selectionChanged && currentQuestion && !canExtendSelection) return current;
-      return { ...current, questionId: nextQuestion?.id || '', answerValues: canExtendSelection ? Array.from(new Set([...current.answerValues, ...optionValues])) : optionValues };
+      const nextAnswerValues = questionChanged
+        ? optionValues
+        : Array.from(new Set([
+          ...current.answerValues.filter(value => optionValues.includes(value)),
+          ...optionValues.filter(value => !previousOptionValues.includes(value)),
+        ]));
+      const sameAnswers = current.answerValues.length === nextAnswerValues.length
+        && current.answerValues.every((value, index) => value === nextAnswerValues[index]);
+      if (current.questionId === nextQuestionId && sameAnswers) return current;
+      return { ...current, questionId: nextQuestionId, answerValues: nextAnswerValues };
     });
-  }, [selectionKey, questions, submissionsBySurvey]);
+  }, [filters.questionId, optionValuesKey, questionIdsKey, questions, optionValues]);
 
   const handleFiltersChange = (next: TemporalReportFilters) => {
     if (next.questionId !== filters.questionId) {

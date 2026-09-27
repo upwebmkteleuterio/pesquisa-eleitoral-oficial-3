@@ -131,12 +131,12 @@ export default function SubmissionsList() {
     }
   };
 
-  const handleGenerateResponsesPDF = (memberId: string, pdfType: ResponsePdfType) => {
+  const handleGenerateResponsesPDF = async (memberId: string, pdfType: ResponsePdfType) => {
     if (!selectedSurvey || !completeSubmissions.length || validSubmissionCount === 0 || (memberId !== "todos" && !validCountsByMember[memberId])) return;
     if (pdfType === "respondents") {
-      generateRespondentsPDF(selectedSurvey, completeSubmissions, memberId);
+      await generateRespondentsPDF(selectedSurvey, completeSubmissions, memberId);
     } else {
-      generateResponsesPDF(selectedSurvey, completeSubmissions, allUsers || [], memberId, demographicOptions || []);
+      await generateResponsesPDF(selectedSurvey, completeSubmissions, allUsers || [], memberId, demographicOptions || []);
     }
     setIsResponsePdfModalOpen(false);
   };

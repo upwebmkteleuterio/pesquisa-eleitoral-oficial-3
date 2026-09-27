@@ -8,13 +8,16 @@ import { aggregateQuestionResponses } from './responseNormalization';
 import { addTemporalVisualizationPages } from './temporalPdfCharts';
 import type { TemporalChartCapture } from './temporalPdfCapture';
 
-export const generateInterviewPDF = (
+export const generateInterviewPDF = async (
   submission: Submission,
   survey?: Survey,
   researcher?: Researcher,
   demographicOptions?: DemographicOption[]
-) => {
+): Promise<void> => {
   const doc = new jsPDF();
+  const cover = await loadReportCover();
+  addReportCover(doc, cover);
+  doc.addPage();
   const pageWidth = doc.internal.pageSize.getWidth();
 
   const getLabel = (category: string, value: string) => {
@@ -117,7 +120,7 @@ export const generateInterviewPDF = (
 
   // Footer
   const pageCount = (doc.internal as any).getNumberOfPages();
-  for (let i = 1; i <= pageCount; i++) {
+  for (let i = 2; i <= pageCount; i++) {
     doc.setPage(i);
     doc.setFontSize(8);
     doc.setTextColor(150, 150, 150);
@@ -187,6 +190,9 @@ export const generateResearchersPDF = async (researchers: Researcher[]): Promise
   const doc = new jsPDF({ format: 'a4', orientation: 'portrait' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
+  const cover = await loadReportCover();
+  addReportCover(doc, cover);
+  doc.addPage();
 
   doc.setFillColor(5, 50, 97);
   doc.rect(0, 0, pageWidth, 30, 'F');
@@ -226,7 +232,7 @@ export const generateResearchersPDF = async (researchers: Researcher[]): Promise
   }
 
   const pageCount = (doc.internal as any).getNumberOfPages();
-  for (let page = 1; page <= pageCount; page++) {
+  for (let page = 2; page <= pageCount; page++) {
     doc.setPage(page);
     doc.setTextColor(110, 110, 110);
     doc.setFont('helvetica', 'normal');
@@ -252,6 +258,9 @@ export const generateRankingPDF = async (survey: Survey, ranking: RankedResearch
   const doc = new jsPDF({ format: 'a4', orientation: 'portrait' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
+  const cover = await loadReportCover();
+  addReportCover(doc, cover);
+  doc.addPage();
   const generatedAt = new Date();
   const dateLabel = format(generatedAt, 'dd/MM/yyyy HH:mm', { locale: ptBR });
   const maxCount = Math.max(...ranking.map(researcher => researcher.collectionCount), 1);
@@ -354,7 +363,7 @@ export const generateRankingPDF = async (survey: Survey, ranking: RankedResearch
   });
 
   const pageCount = (doc.internal as any).getNumberOfPages();
-  for (let page = 1; page <= pageCount; page++) {
+  for (let page = 2; page <= pageCount; page++) {
     doc.setPage(page);
     doc.setDrawColor(226, 232, 240);
     doc.setLineWidth(0.25);
@@ -802,13 +811,13 @@ export const generateReportMergesPDF = (survey: Survey, cards: ReportMergeCardDa
   doc.save(fileName);
 };
 
-export const generateResponsesPDF = (
+export const generateResponsesPDF = async (
   survey: Survey,
   submissions: Submission[],
   members: Researcher[] = [],
   selectedMemberId = "todos",
   demographicOptions: DemographicOption[] = [],
-) => {
+): Promise<void> => {
   const validSubmissions = (Array.isArray(submissions) ? submissions : [])
     .filter(submission => submission && submission.valida !== false)
     .filter(submission => selectedMemberId === "todos" || getSubmissionMemberId(submission) === selectedMemberId)
@@ -830,6 +839,9 @@ export const generateResponsesPDF = (
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
+  const cover = await loadReportCover();
+  addReportCover(doc, cover);
+  doc.addPage();
   const margin = 15;
   const usableWidth = pageWidth - margin * 2;
   const questions = [...(survey.schema_dinamico?.questions || [])];
@@ -928,7 +940,7 @@ export const generateResponsesPDF = (
 
   const generatedAt = format(new Date(), "dd/MM/yyyy HH:mm", { locale: ptBR });
   const pageCount = (doc.internal as any).getNumberOfPages();
-  for (let page = 1; page <= pageCount; page++) {
+  for (let page = 2; page <= pageCount; page++) {
     doc.setPage(page);
     doc.setFillColor(5, 50, 97);
     doc.rect(0, 0, pageWidth, 14, "F");
@@ -949,11 +961,11 @@ export const generateResponsesPDF = (
   doc.save(fileName);
 };
 
-export const generateRespondentsPDF = (
+export const generateRespondentsPDF = async (
   survey: Survey,
   submissions: Submission[],
   selectedMemberId = "todos",
-) => {
+): Promise<void> => {
   const validSubmissions = (Array.isArray(submissions) ? submissions : [])
     .filter(submission => submission && submission.valida !== false)
     .filter(submission => selectedMemberId === "todos" || getSubmissionMemberId(submission) === selectedMemberId)
@@ -968,6 +980,9 @@ export const generateRespondentsPDF = (
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 15;
   const generatedAt = format(new Date(), "dd/MM/yyyy HH:mm", { locale: ptBR });
+  const cover = await loadReportCover();
+  addReportCover(doc, cover);
+  doc.addPage();
 
   doc.setFillColor(5, 50, 97);
   doc.rect(0, 0, pageWidth, 24, "F");
@@ -996,7 +1011,7 @@ export const generateRespondentsPDF = (
   });
 
   const pageCount = (doc.internal as any).getNumberOfPages();
-  for (let page = 1; page <= pageCount; page++) {
+  for (let page = 2; page <= pageCount; page++) {
     doc.setPage(page);
     doc.setDrawColor(210, 210, 210);
     doc.line(margin, pageHeight - 15, pageWidth - margin, pageHeight - 15);

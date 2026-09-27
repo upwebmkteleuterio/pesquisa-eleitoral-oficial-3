@@ -36,8 +36,8 @@ export function HistoryDrawer({ isOpen, onClose, submission, survey, researcher,
     { label: 'Estado Civil', value: getLabel('estado_civil', submission.dados_fixos?.estado_civil) },
   ];
 
-  const handleExportPDF = () => {
-    generateInterviewPDF(submission, survey, researcher, demographicOptions);
+  const handleExportPDF = async () => {
+    await generateInterviewPDF(submission, survey, researcher, demographicOptions);
   };
 
   return (

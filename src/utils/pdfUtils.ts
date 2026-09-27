@@ -2,7 +2,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Submission, Survey, Researcher, DemographicOption, ReportMergeCardData, VirtualReportCardData, TemporalReportData, TemporalReportFilters } from '../types';
+import { Submission, Survey, Researcher, DemographicOption, ReportMergeCardData, VirtualReportCardData, TemporalReportData, TemporalReportFilters, TemporalRegionalSlice } from '../types';
 import type { RankedResearcher } from '../hooks/useRankingData';
 import { aggregateQuestionResponses } from './responseNormalization';
 import { addTemporalVisualizationPages } from './temporalPdfCharts';
@@ -991,13 +991,84 @@ const drawTemporalVariation = (doc: jsPDF, cell: TemporalPdfCellBounds, variatio
   doc.text(`${Math.abs(variation.value).toFixed(0)}%`, arrowX + 4, arrowBottom + 1);
 };
 
+const TEMPORAL_REGIONAL_COLORS: [number, number, number][] = [
+  [15, 118, 110],
+  [37, 99, 235],
+  [219, 39, 119],
+  [217, 119, 6],
+  [124, 58, 237],
+  [8, 145, 178],
+  [101, 163, 13],
+  [71, 85, 105],
+];
+
+type TemporalRegionalPdfEntry = TemporalRegionalSlice & {
+  name: string;
+  color: [number, number, number];
+};
+
+const regionalEntryName = (slice: TemporalRegionalSlice): string => (
+  slice.regionLabel ? `${slice.surveyName} · ${slice.regionLabel}` : slice.surveyName
+);
+
+const drawTemporalRegionalDonut = (
+  doc: jsPDF,
+  entries: TemporalRegionalPdfEntry[],
+  centerX: number,
+  centerY: number,
+  outerRadius: number,
+  innerRadius: number,
+) => {
+  const percentages = entries.map(entry => Math.max(0, Number(entry.percentage) || 0));
+  const percentageTotal = percentages.reduce((total, weight) => total + weight, 0);
+  const weights = percentageTotal > 0
+    ? percentages
+    : entries.map(entry => Math.max(0, Number(entry.count) || 0));
+  const weightTotal = weights.reduce((total, weight) => total + weight, 0);
+  if (weightTotal <= 0) return;
+  let startAngle = -Math.PI / 2;
+
+  entries.forEach((entry, index) => {
+    const sliceAngle = (weights[index] / weightTotal) * Math.PI * 2;
+    if (sliceAngle <= 0) return;
+    const gap = entries.length > 1 ? Math.min(0.025, sliceAngle / 4) : 0;
+    const start = startAngle + gap;
+    const end = startAngle + sliceAngle - gap;
+    if (end <= start) {
+      startAngle += sliceAngle;
+      return;
+    }
+    const points: [number, number][] = [];
+    const steps = Math.max(3, Math.ceil((end - start) / (Math.PI / 18)));
+    for (let step = 0; step <= steps; step += 1) {
+      const angle = start + ((end - start) * step) / steps;
+      points.push([centerX + Math.cos(angle) * outerRadius, centerY + Math.sin(angle) * outerRadius]);
+    }
+    for (let step = steps; step >= 0; step -= 1) {
+      const angle = start + ((end - start) * step) / steps;
+      points.push([centerX + Math.cos(angle) * innerRadius, centerY + Math.sin(angle) * innerRadius]);
+    }
+    const vectors = points.slice(1).map((point, pointIndex) => [
+      point[0] - points[pointIndex][0],
+      point[1] - points[pointIndex][1],
+    ] as [number, number]);
+    doc.setFillColor(...entry.color);
+    doc.setDrawColor(255, 255, 255);
+    doc.setLineWidth(0.3);
+    doc.lines(vectors, points[0][0], points[0][1], [1, 1], 'FD', true);
+    startAngle += sliceAngle;
+  });
+
+  doc.setFillColor(255, 255, 255);
+  doc.circle(centerX, centerY, innerRadius, 'F');
+};
+
 export const generateTemporalReportPDF = async (
   survey: Survey,
   questionLabel: string,
   filters: TemporalReportFilters,
   report: TemporalReportData,
   chartCapture?: TemporalChartCapture,
-  regionalCapture?: TemporalChartCapture,
 ) => {
   if (report.points.length === 0 || report.answerOptions.length === 0) return;
   const cover = await loadReportCover('/assets/veraxus-pesquisas-capa-temporal.png');
@@ -1050,24 +1121,107 @@ export const generateTemporalReportPDF = async (
 
   addTemporalVisualizationPages(doc, report, filters.displayMode);
 
-  if (regionalCapture && regionalCapture.width > 0 && regionalCapture.height > 0) {
-    doc.addPage();
-    doc.setTextColor(5, 50, 97);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.text('VISUALIZAÇÃO TEMPORAL · PESQUISA / REGIÃO', margin, 18);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(90, 90, 90);
-    doc.text('Cada resultado apresenta o donut completo e sua legenda com pesquisa, região, quantidade e percentual.', margin, 26);
+  const regionalBreakdowns = report.regionalBreakdowns || {};
+  const regionalOptions = report.answerOptions.slice(0, 4);
+  const hasRegionalData = Object.values(regionalBreakdowns).some(slices => (
+    Array.isArray(slices) && slices.some(slice => slice.total > 0 || slice.count > 0 || slice.percentage > 0)
+  ));
 
-    const imageTop = 34;
-    const maxWidth = pageWidth - margin * 2;
-    const maxHeight = pageHeight - imageTop - 14;
-    const aspectRatio = regionalCapture.width / regionalCapture.height;
-    const imageWidth = Math.min(maxWidth, maxHeight * aspectRatio);
-    const imageHeight = imageWidth / aspectRatio;
-    doc.addImage(regionalCapture.dataUrl, 'PNG', margin + (maxWidth - imageWidth) / 2, imageTop, imageWidth, imageHeight);
+  if (hasRegionalData && regionalOptions.length > 0) {
+    const surveyIds = Array.from(new Set(Object.values(regionalBreakdowns).flat().map(slice => slice.surveyId)));
+    const colorBySurveyId = new Map(surveyIds.map((surveyId, index) => [surveyId, TEMPORAL_REGIONAL_COLORS[index % TEMPORAL_REGIONAL_COLORS.length]]));
+    const cardGap = 6;
+    const cardWidth = (pageWidth - margin * 2 - cardGap) / 2;
+    const cardPadding = 5;
+    const valueWidth = 31;
+    const legendLabelWidth = cardWidth - cardPadding * 2 - valueWidth - 4;
+    const regionalCards = regionalOptions.map(option => {
+      const entries: TemporalRegionalPdfEntry[] = (regionalBreakdowns[option.value] || []).map(slice => ({
+        ...slice,
+        name: regionalEntryName(slice),
+        color: colorBySurveyId.get(slice.surveyId) || TEMPORAL_REGIONAL_COLORS[0],
+      }));
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      const titleLines = doc.splitTextToSize(option.label, cardWidth - cardPadding * 2) as string[];
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.5);
+      const legend = entries.map(entry => ({
+        entry,
+        lines: doc.splitTextToSize(entry.name, legendLabelWidth) as string[],
+        value: `${entry.count.toLocaleString('pt-BR')} · ${entry.percentage.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`,
+      }));
+      const legendHeight = legend.reduce((height, item) => height + Math.max(1, item.lines.length) * 3.3 + 1.5, 0);
+      const titleHeight = Math.max(1, titleLines.length) * 4.3;
+      const height = cardPadding * 2 + titleHeight + 3 + 38 + 4 + legendHeight;
+      return { option, entries, titleLines, legend, height };
+    });
+
+    const drawRegionalPageHeader = (continuation: boolean) => {
+      doc.setTextColor(5, 50, 97);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.text('VISUALIZAÇÃO TEMPORAL · PESQUISA / REGIÃO', margin, 18);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(90, 90, 90);
+      doc.text(
+        continuation
+          ? 'Continuação — cada resultado apresenta o donut completo e sua legenda com pesquisa, região, quantidade e percentual.'
+          : 'Cada resultado apresenta o donut completo e sua legenda com pesquisa, região, quantidade e percentual.',
+        margin,
+        26,
+      );
+    };
+
+    let cardIndex = 0;
+    let isContinuation = false;
+    while (cardIndex < regionalCards.length) {
+      doc.addPage();
+      drawRegionalPageHeader(isContinuation);
+      let currentY = 34;
+      while (cardIndex < regionalCards.length) {
+        const rowCards = regionalCards.slice(cardIndex, cardIndex + 2);
+        const rowHeight = Math.max(...rowCards.map(card => card.height));
+        if (currentY > 34 && currentY + rowHeight > pageHeight - 18) break;
+        rowCards.forEach((card, columnIndex) => {
+          const cardX = margin + columnIndex * (cardWidth + cardGap);
+          const cardY = currentY;
+          doc.setFillColor(248, 250, 252);
+          doc.setDrawColor(226, 232, 240);
+          doc.setLineWidth(0.25);
+          doc.roundedRect(cardX, cardY, cardWidth, card.height, 3, 3, 'FD');
+
+          doc.setTextColor(15, 23, 42);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(8);
+          doc.text(card.titleLines, cardX + cardWidth / 2, cardY + cardPadding + 3.5, { align: 'center' });
+
+          const titleHeight = Math.max(1, card.titleLines.length) * 4.3;
+          const donutCenterX = cardX + cardWidth / 2;
+          const donutCenterY = cardY + cardPadding + titleHeight + 3 + 19;
+          drawTemporalRegionalDonut(doc, card.entries, donutCenterX, donutCenterY, 17, 8.5);
+
+          let legendY = donutCenterY + 17 + 4;
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(6.5);
+          card.legend.forEach(item => {
+            const lineHeight = 3.3;
+            const rowHeight = Math.max(1, item.lines.length) * lineHeight;
+            doc.setFillColor(...item.entry.color);
+            doc.circle(cardX + cardPadding + 1.5, legendY - 1.3, 1.3, 'F');
+            doc.setTextColor(71, 85, 105);
+            doc.text(item.lines, cardX + cardPadding + 4, legendY);
+            doc.setTextColor(15, 23, 42);
+            doc.text(item.value, cardX + cardWidth - cardPadding, legendY, { align: 'right' });
+            legendY += rowHeight + 1.5;
+          });
+        });
+        currentY += rowHeight + cardGap;
+        cardIndex += rowCards.length;
+      }
+      isContinuation = true;
+    }
   }
 
   doc.addPage();

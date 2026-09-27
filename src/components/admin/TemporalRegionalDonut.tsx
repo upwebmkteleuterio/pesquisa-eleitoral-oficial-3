@@ -8,6 +8,9 @@ interface Props {
 }
 
 const COLORS = ['#0f766e', '#2563eb', '#db2777', '#d97706', '#7c3aed', '#0891b2', '#65a30d', '#475569'];
+const REGIONAL_EXPORT_WIDTH = 1400;
+const REGIONAL_EXPORT_CHART_WIDTH = 630;
+const REGIONAL_EXPORT_CHART_HEIGHT = 232;
 
 const formatPercentage = (value: number) => `${value.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
@@ -64,26 +67,26 @@ export function TemporalRegionalDonutExport({ answerOptions, regionalBreakdowns,
   })));
   const titleHeight = Math.max(36, ...options.map(option => Math.max(1, Math.ceil(option.label.length / 40)) * 18));
   const legendHeight = Math.max(24, ...entriesByOption.map(entries => entries.reduce((height, item, index) => height + Math.max(1, Math.ceil(item.name.length / 42)) * 22 + (index ? 4 : 0), 0)));
-  const cardHeight = 24 + titleHeight + 232 + 12 + legendHeight + 20;
+  const cardHeight = 24 + titleHeight + REGIONAL_EXPORT_CHART_HEIGHT + 12 + legendHeight + 20;
   const rowCount = Math.max(1, Math.ceil(options.length / 2));
   const exportHeight = 28 + 52 + 20 + rowCount * cardHeight + (rowCount - 1) * 20 + 28;
 
-  return <div ref={exportRef} data-temporal-regional-pdf-export="true" aria-hidden="true" className="pointer-events-none fixed left-[-10000px] top-0 w-[1400px] overflow-hidden bg-white p-7 text-slate-900" style={{ height: `${exportHeight}px` }}>
+  return <div id="temporal-regional-pdf-export" ref={exportRef} data-temporal-regional-pdf-export="true" aria-hidden="true" className="pointer-events-none fixed left-[-10000px] top-0 overflow-hidden bg-white p-7 text-slate-900" style={{ width: `${REGIONAL_EXPORT_WIDTH}px`, height: `${exportHeight}px` }}>
     <div><h2 className="text-2xl font-black">Por pesquisa / região</h2><p className="text-sm font-bold text-slate-600">Distribuição dos resultados no período filtrado</p></div>
-    <div className="mt-5 grid grid-cols-[660px_660px] gap-5">
+    <div className="mt-5 grid grid-cols-[660px_660px] gap-5" style={{ width: '1340px', gridTemplateColumns: '660px 660px', columnGap: '20px' }}>
       {options.map((option, optionIndex) => {
         const data = entriesByOption[optionIndex];
-        return <div key={option.value} className="w-[660px] rounded-2xl bg-slate-50 p-3" style={{ height: `${cardHeight}px` }}>
+        return <div key={option.value} className="w-[660px] rounded-2xl bg-slate-50 p-3" style={{ width: '660px', height: `${cardHeight}px` }}>
           <h3 className="break-words px-2 text-center text-base font-black leading-[18px]" style={{ minHeight: `${titleHeight}px`, overflowWrap: 'anywhere' }}>{option.label}</h3>
-          <div className="h-[232px] w-[630px]">
-            <PieChart width={630} height={232}>
+          <div className="h-[232px] w-[630px]" style={{ width: `${REGIONAL_EXPORT_CHART_WIDTH}px`, height: `${REGIONAL_EXPORT_CHART_HEIGHT}px` }}>
+            <PieChart width={REGIONAL_EXPORT_CHART_WIDTH} height={REGIONAL_EXPORT_CHART_HEIGHT}>
               <Pie data={data} dataKey="percentage" nameKey="name" innerRadius="48%" outerRadius="72%" paddingAngle={2} strokeWidth={1} stroke="#fff" label={false} isAnimationActive={false}>
-                {data.map(item => <Cell key={item.surveyId} fill={item.color} />)}
+                {data.map((item, itemIndex) => <Cell key={`${item.surveyId}-${itemIndex}`} fill={item.color} />)}
               </Pie>
             </PieChart>
           </div>
           <ul className="mt-3 space-y-1" aria-label={`Legenda de ${option.label}`}>
-            {data.map(item => <li key={item.surveyId} className="flex min-w-0 items-start gap-2 text-[11px] font-bold leading-[22px] text-slate-600">
+            {data.map((item, itemIndex) => <li key={`${item.surveyId}-${itemIndex}`} className="flex min-w-0 items-start gap-2 text-[11px] font-bold leading-[22px] text-slate-600">
               <span className="mt-1 h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: item.color }} aria-hidden="true" />
               <span className="min-w-0 flex-1 break-words" style={{ overflowWrap: 'anywhere' }}>{item.name}</span>
               <span className="shrink-0 whitespace-nowrap text-right text-slate-900">{item.count.toLocaleString('pt-BR')} · {formatPercentage(item.percentage)}</span>

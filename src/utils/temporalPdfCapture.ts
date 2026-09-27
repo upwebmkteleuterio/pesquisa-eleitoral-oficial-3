@@ -36,12 +36,22 @@ const waitForAnimationFrames = async (count: number): Promise<void> => {
 
 const waitForRenderedContent = async (target: HTMLElement): Promise<void> => {
   for (let attempt = 0; attempt < 10; attempt += 1) {
-    if (target.querySelector('svg')) {
+    const renderedSvg = Array.from(target.querySelectorAll<SVGSVGElement>('svg')).some(svg => {
+      const bounds = svg.getBoundingClientRect();
+      return bounds.width > 0 && bounds.height > 0;
+    });
+    if (renderedSvg) {
       await waitForAnimationFrames(2);
       return;
     }
     await waitForAnimationFrames(1);
   }
+};
+
+const getUniqueCaptureTarget = (document: Document, selector: string): HTMLElement => {
+  const targets = Array.from(document.querySelectorAll<HTMLElement>(selector));
+  if (targets.length !== 1) throw new Error('temporal-pdf-capture-target-is-not-unique');
+  return targets[0];
 };
 
 const hasRenderedContent = (canvas: HTMLCanvasElement): boolean => {
@@ -180,8 +190,7 @@ export const captureTemporalChart = async (
       imageTimeout: 15000,
       logging: false,
       onclone: clonedDocument => {
-        const clonedTarget = clonedDocument.querySelector<HTMLElement>(captureSelector);
-        if (!clonedTarget) return;
+        const clonedTarget = getUniqueCaptureTarget(clonedDocument, captureSelector);
         clonedTarget.style.position = 'fixed';
         clonedTarget.style.left = '0';
         clonedTarget.style.top = '0';

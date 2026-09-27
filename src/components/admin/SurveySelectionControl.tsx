@@ -39,7 +39,7 @@ export function SurveySelectionControl({
         onClick={onOpen}
         aria-expanded={isOpen}
         aria-haspopup="dialog"
-        className={`inline-flex min-h-12 items-center gap-3 rounded-2xl border border-outline bg-white px-4 py-3 text-left text-sm font-black text-on-surface shadow-sm transition hover:border-primary dark:bg-slate-900 ${className ? "w-full" : ""}`}
+        className={`inline-flex min-h-12 items-center gap-3 rounded-2xl border border-outline bg-white px-4 py-3 text-left text-sm font-black text-on-surface shadow-sm transition hover:border-primary dark:bg-slate-900 ${className ? "w-full max-w-full" : ""}`}
       >
         <span className="min-w-0">
           <span className="block text-[10px] font-black uppercase tracking-widest text-primary">{label}</span>

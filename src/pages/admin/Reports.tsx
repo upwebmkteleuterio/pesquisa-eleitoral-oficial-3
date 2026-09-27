@@ -762,6 +762,7 @@ export default function Reports() {
                 onToggle={handleTogglePendingSurvey}
                 onCancel={handleCancelSurveySelection}
                 onConfirm={handleConfirmSurveySelection}
+                className="w-full max-w-full sm:w-72"
               />
 
               <div className="flex bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl border border-outline">

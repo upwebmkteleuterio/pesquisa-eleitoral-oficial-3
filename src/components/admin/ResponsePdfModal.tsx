@@ -2,21 +2,27 @@ import { useEffect, useState } from "react";
 import { X, FileDown } from "lucide-react";
 import { Researcher } from "../../types";
 
+export type ResponsePdfType = "complete" | "respondents";
+
 interface ResponsePdfModalProps {
   isOpen: boolean;
   members: Researcher[];
   validCount: number;
   validCountsByMember: Record<string, number>;
   onClose: () => void;
-  onGenerate: (memberId: string) => void;
+  onGenerate: (memberId: string, pdfType: ResponsePdfType) => void;
 }
 
 export function ResponsePdfModal({ isOpen, members, validCount, validCountsByMember, onClose, onGenerate }: ResponsePdfModalProps) {
   const [selectedMemberId, setSelectedMemberId] = useState("todos");
+  const [selectedPdfType, setSelectedPdfType] = useState<ResponsePdfType>("complete");
   const selectedValidCount = selectedMemberId === "todos" ? validCount : validCountsByMember[selectedMemberId] || 0;
 
   useEffect(() => {
-    if (isOpen) setSelectedMemberId("todos");
+    if (isOpen) {
+      setSelectedMemberId("todos");
+      setSelectedPdfType("complete");
+    }
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -41,9 +47,11 @@ export function ResponsePdfModal({ isOpen, members, validCount, validCountsByMem
         </select>
         <p className="mt-3 text-xs font-medium text-on-surface-variant">{selectedValidCount} resposta{selectedValidCount === 1 ? " válida" : "s válidas"} disponível{selectedValidCount === 1 ? "" : "is"} para esta seleção.</p>
 
+        <fieldset className="mt-6 space-y-2"><legend className="mb-2 text-xs font-black uppercase tracking-widest text-on-surface-variant">Tipo de PDF</legend><label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-outline p-3"><input type="radio" name="response-pdf-type" value="complete" checked={selectedPdfType === "complete"} onChange={() => setSelectedPdfType("complete")} className="mt-1 accent-primary" /><span><span className="block text-sm font-black text-on-surface">Resposta completa</span><span className="block text-xs font-medium text-on-surface-variant">Dados, perfil e perguntas da resposta.</span></span></label><label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-outline p-3"><input type="radio" name="response-pdf-type" value="respondents" checked={selectedPdfType === "respondents"} onChange={() => setSelectedPdfType("respondents")} className="mt-1 accent-primary" /><span><span className="block text-sm font-black text-on-surface">Dados dos respondentes</span><span className="block text-xs font-medium text-on-surface-variant">Somente nome, telefone e bairro.</span></span></label></fieldset>
+
         <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
           <button type="button" onClick={onClose} className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-bold text-on-surface-variant transition hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700">Cancelar</button>
-          <button type="button" disabled={selectedValidCount === 0} onClick={() => onGenerate(selectedMemberId)} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-black text-white shadow-lg shadow-primary/20 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"><FileDown size={18} />Gerar PDF</button>
+          <button type="button" disabled={selectedValidCount === 0} onClick={() => onGenerate(selectedMemberId, selectedPdfType)} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-black text-white shadow-lg shadow-primary/20 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"><FileDown size={18} />Gerar PDF</button>
         </div>
       </div>
     </div>

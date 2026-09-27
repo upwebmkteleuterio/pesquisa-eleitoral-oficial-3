@@ -7,6 +7,7 @@ import { ArrowLeft, ArrowRight, Check, CheckCircle, Camera, RefreshCw, AlertTria
 import { cn } from "../lib/utils";
 import { calculateFormProgress } from "../lib/progressUtils";
 import { AutoSuggestInput } from "../components/AutoSuggestInput";
+import { formatBrazilianPhone, isValidBrazilianPhone, normalizeBrazilianPhone, phoneValidationMessage } from "../utils/phoneUtils";
 
 export default function PublicForm() {
   const { id } = useParams<{ id: string }>();
@@ -150,8 +151,8 @@ export default function PublicForm() {
       pesquisador_id: 'anonymous', // Explicit anonymous flag
       nome_entrevistado: respondentData.nome,
       bairro: respondentData.bairro,
-      telefone: respondentData.telefone,
-      dados_fixos: respondentData,
+      telefone: normalizeBrazilianPhone(respondentData.telefone),
+      dados_fixos: { ...respondentData, telefone: normalizeBrazilianPhone(respondentData.telefone) },
       respostas_dinamicas: dynamicAnswers,
       geolocalizacao: location || { lat: 0, lng: 0 },
       data_coleta: new Date().toISOString(),
@@ -165,6 +166,10 @@ export default function PublicForm() {
     
     if (!nome || !telefone || !sexo || !faixa_etaria || !escolaridade || !religiao || !renda || !estado_civil) {
       setValidationAlert("Por favor, preencha todos os campos obrigatórios (*)");
+      return;
+    }
+    if (!isValidBrazilianPhone(telefone)) {
+      setValidationAlert(phoneValidationMessage);
       return;
     }
     
@@ -219,8 +224,9 @@ export default function PublicForm() {
                   <input 
                     className="w-full h-14 px-4 rounded-2xl border border-outline bg-slate-50 dark:bg-slate-800 font-bold" 
                     placeholder="(00) 00000-0000"
-                    value={respondentData.telefone}
-                    onChange={(e) => setRespondentData({ ...respondentData, telefone: e.target.value })}
+                    value={formatBrazilianPhone(respondentData.telefone)}
+                    onChange={(e) => setRespondentData({ ...respondentData, telefone: formatBrazilianPhone(e.target.value) })}
+                    inputMode="numeric"
                   />
                 </div>
                 <div>

@@ -48,6 +48,7 @@ export function TemporalReport({ surveys, selectedSurveyIds, pendingSurveyIds, s
   const previousQuestionIdRef = useRef('');
   const previousOptionValuesRef = useRef<string[]>([]);
   const [isExporting, setIsExporting] = useState(false);
+  const [isPreparingReport, setIsPreparingReport] = useState(false);
   const hasInvalidDateRange = Boolean(filters.startDate && filters.endDate && filters.startDate > filters.endDate);
   const selectedSurvey = selectedSurveys[0];
   const pdfSurvey = selectedSurvey ? { ...selectedSurvey, nome: selectedSurveys.map(survey => survey.nome).join(' + ') } : undefined;
@@ -56,7 +57,7 @@ export function TemporalReport({ surveys, selectedSurveyIds, pendingSurveyIds, s
   const exportChartHeight = filters.chartType === 'line' ? 576 : 448;
 
   useEffect(() => {
-    const nextQuestion = questions.find(question => question.id === filters.questionId) || questions[0];
+    const nextQuestion = questions.find(question => question.id === filters.questionId);
     const nextQuestionId = nextQuestion?.id || '';
     const previousOptionValues = previousOptionValuesRef.current;
     const optionsChanged = previousOptionValues.length !== optionValues.length
@@ -80,8 +81,15 @@ export function TemporalReport({ surveys, selectedSurveyIds, pendingSurveyIds, s
     });
   }, [filters.questionId, optionValuesKey, questionIdsKey, questions, optionValues]);
 
+  useEffect(() => {
+    if (!isPreparingReport) return;
+    const timeoutId = window.setTimeout(() => setIsPreparingReport(false), 180);
+    return () => window.clearTimeout(timeoutId);
+  }, [isPreparingReport, filters.questionId, report]);
+
   const handleFiltersChange = (next: TemporalReportFilters) => {
     if (next.questionId !== filters.questionId) {
+      setIsPreparingReport(true);
       const question = questions.find(item => item.id === next.questionId);
       setFilters({ ...next, answerValues: question ? getTemporalQuestionGroupOptions(question, submissionsBySurvey).map(option => option.value) : [] });
       return;
@@ -100,13 +108,14 @@ export function TemporalReport({ surveys, selectedSurveyIds, pendingSurveyIds, s
 
   return <div className="space-y-6">
     <TemporalFilters surveys={surveys} selectedSurveyIds={selectedSurveyIds} pendingSurveyIds={pendingSurveyIds} surveySelectorOpen={surveySelectorOpen} questions={questions} filters={filters} answerOptions={availableOptions} onSurveyOpen={onSurveyOpen} onSurveyToggle={onSurveyToggle} onSurveyCancel={onSurveyCancel} onSurveyConfirm={onSurveyConfirm} onChange={handleFiltersChange} />
-    {isLoading && <div className="rounded-[2rem] border border-outline bg-white p-12 text-center font-bold text-on-surface-variant dark:bg-slate-900" role="status">Carregando respostas válidas...</div>}
+    {(isLoading || isPreparingReport) && <div className="rounded-[2rem] border border-outline bg-white p-12 text-center font-bold text-on-surface-variant dark:bg-slate-900" role="status">Carregando respostas válidas<span className="inline-flex w-6 justify-start" aria-hidden="true"><span className="animate-pulse">.</span><span className="animate-pulse [animation-delay:150ms]">.</span><span className="animate-pulse [animation-delay:300ms]">.</span></span></div>}
     {error && <div className="rounded-[2rem] border border-rose-200 bg-rose-50 p-6 font-bold text-rose-800 dark:bg-rose-950/30 dark:text-rose-200" role="alert">{error}</div>}
-    {!isLoading && !error && !selectedSurveyIds.length && <div className="rounded-[2rem] border border-dashed border-outline bg-white p-12 text-center font-bold text-on-surface-variant dark:bg-slate-900">Selecione uma pesquisa para começar.</div>}
-    {!isLoading && !error && selectedSurveyIds.length > 0 && !questions.length && <div className="rounded-[2rem] border border-dashed border-outline bg-white p-12 text-center font-bold text-on-surface-variant dark:bg-slate-900">{selectedSurveyIds.length > 1 ? 'Não há perguntas temporais comuns entre as pesquisas selecionadas.' : 'Esta pesquisa não possui perguntas com alternativas ou escala.'}</div>}
-    {!isLoading && !error && hasInvalidDateRange && <div className="rounded-[2rem] border border-rose-200 bg-rose-50 p-6 text-center font-bold text-rose-800 dark:bg-rose-950/30 dark:text-rose-200" role="alert">A data final deve ser igual ou posterior à data inicial.</div>}
-    {!isLoading && !error && !hasInvalidDateRange && selectedSurveyIds.length > 0 && questions.length > 0 && (!filters.answerValues.length || !report.points.length) && <div className="rounded-[2rem] border border-dashed border-outline bg-white p-12 text-center font-bold text-on-surface-variant dark:bg-slate-900">Nenhum dado encontrado para os filtros selecionados.</div>}
-    {!isLoading && !error && !hasInvalidDateRange && report.points.length > 0 && report.answerOptions.length > 0 && <>
+    {!isLoading && !isPreparingReport && !error && !selectedSurveyIds.length && <div className="rounded-[2rem] border border-dashed border-outline bg-white p-12 text-center font-bold text-on-surface-variant dark:bg-slate-900">Selecione uma pesquisa para começar.</div>}
+    {!isLoading && !isPreparingReport && !error && selectedSurveyIds.length > 0 && !questions.length && <div className="rounded-[2rem] border border-dashed border-outline bg-white p-12 text-center font-bold text-on-surface-variant dark:bg-slate-900">{selectedSurveyIds.length > 1 ? 'Não há perguntas temporais comuns entre as pesquisas selecionadas.' : 'Esta pesquisa não possui perguntas com alternativas ou escala.'}</div>}
+    {!isLoading && !isPreparingReport && !error && hasInvalidDateRange && <div className="rounded-[2rem] border border-rose-200 bg-rose-50 p-6 text-center font-bold text-rose-800 dark:bg-rose-950/30 dark:text-rose-200" role="alert">A data final deve ser igual ou posterior à data inicial.</div>}
+    {!isLoading && !isPreparingReport && !error && !filters.questionId && selectedSurveyIds.length > 0 && questions.length > 0 && <div className="rounded-[2rem] border border-dashed border-outline bg-white p-12 text-center font-bold text-on-surface-variant dark:bg-slate-900">Selecione uma pergunta para visualizar o relatório.</div>}
+    {!isLoading && !isPreparingReport && !error && filters.questionId && !hasInvalidDateRange && (!filters.answerValues.length || !report.points.length) && <div className="rounded-[2rem] border border-dashed border-outline bg-white p-12 text-center font-bold text-on-surface-variant dark:bg-slate-900">Nenhum dado encontrado para os filtros selecionados.</div>}
+    {!isLoading && !isPreparingReport && !error && !hasInvalidDateRange && filters.questionId && report.points.length > 0 && report.answerOptions.length > 0 && <>
       <section className="space-y-8 rounded-[2rem] border border-outline bg-white p-6 shadow-sm dark:bg-slate-900" aria-label="Gráfico de evolução no tempo">
         <div className="relative flex flex-col gap-4 sm:block"><div className="order-first flex items-center justify-end gap-2 sm:absolute sm:right-0 sm:top-0"><span className="rounded-xl bg-primary/10 px-3 py-2 text-xs font-black text-primary">{filters.grouping === 'day' ? 'Por dia' : filters.grouping === 'week' ? 'Por semana' : 'Por mês'}</span><button type="button" onClick={handleExport} disabled={!canExport || isExporting} className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-black text-white transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40" title="Imprimir relatório temporal em PDF"><FileDown size={16} />{isExporting ? 'Gerando...' : 'Imprimir PDF'}</button></div><div className="order-last min-w-0 rounded-2xl bg-white"><div className="sm:pr-56"><h2 className="text-xl font-black text-on-surface">Evolução no tempo</h2><p className="text-sm font-bold text-on-surface-variant">{report.totalResponses.toLocaleString('pt-BR')} respostas válidas no período</p></div><TemporalReportChart points={report.points} answerOptions={report.answerOptions} optionImages={optionImages} questionId={selectedQuestion?.id} displayMode={filters.displayMode} chartType={filters.chartType} /></div><div id="temporal-chart-pdf-export" ref={chartCaptureRef} data-temporal-pdf-export="true" aria-hidden="true" style={{ position: 'fixed', left: '-10000px', top: 0, width: `${exportChartWidth}px`, height: `${exportChartHeight + 56}px`, overflow: 'hidden', backgroundColor: '#ffffff', pointerEvents: 'none' }}><div><h2 className="text-xl font-black text-on-surface">Evolução no tempo</h2><p className="text-sm font-bold text-on-surface-variant">{report.totalResponses.toLocaleString('pt-BR')} respostas válidas no período</p></div><TemporalReportChart points={report.points} answerOptions={report.answerOptions} optionImages={optionImages} questionId={selectedQuestion?.id} displayMode={filters.displayMode} chartType={filters.chartType} fixedDimensions={{ width: exportChartWidth, height: exportChartHeight }} /></div></div>
         <TemporalGroupedBarChart points={report.points} answerOptions={report.answerOptions} displayMode={filters.displayMode} /><TemporalHeatmap points={report.points} answerOptions={report.answerOptions} displayMode={filters.displayMode} /><TemporalReportTable points={report.points} answerOptions={report.answerOptions} optionImages={optionImages} questionId={selectedQuestion?.id} />

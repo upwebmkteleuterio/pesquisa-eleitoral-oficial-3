@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Save, Trash2, X } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Submission, SubmissionEdits, DemographicOption, Survey } from "../../types";
+import { formatBrazilianPhone, isValidBrazilianPhone, normalizeBrazilianPhone, phoneValidationMessage } from "../../utils/phoneUtils";
 import { SubmissionQuestionField } from "./SubmissionQuestionField";
 
 interface SubmissionEditModalProps {
@@ -30,6 +31,7 @@ export function SubmissionEditModal({ isOpen, submission, survey, demographicOpt
   const [name, setName] = useState("");
   const [neighborhood, setNeighborhood] = useState("");
   const [phone, setPhone] = useState("");
+  const [phoneError, setPhoneError] = useState<string | null>(null);
   const [fixed, setFixed] = useState<Record<string, string>>({});
   const [dynamic, setDynamic] = useState<Record<string, any>>({});
 
@@ -37,7 +39,8 @@ export function SubmissionEditModal({ isOpen, submission, survey, demographicOpt
     if (!submission || !isOpen) return;
     setName(submission.nome_entrevistado || "");
     setNeighborhood(submission.bairro || "");
-    setPhone(submission.telefone || "");
+    setPhone(formatBrazilianPhone(submission.telefone));
+    setPhoneError(null);
     setFixed({ ...(submission.dados_fixos || {}) });
     setDynamic(Object.fromEntries(Object.entries(submission.respostas_dinamicas || {}).map(([key, value]) => [key, Array.isArray(value) ? [...value] : value])));
   }, [submission, isOpen]);
@@ -48,7 +51,11 @@ export function SubmissionEditModal({ isOpen, submission, survey, demographicOpt
   const updateDynamic = (id: string, value: any) => setDynamic(current => ({ ...current, [id]: value }));
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    onSave({ nome_entrevistado: name, bairro: neighborhood, telefone: phone, dados_fixos: fixed, respostas_dinamicas: dynamic });
+    if (!isValidBrazilianPhone(phone)) {
+      setPhoneError(phoneValidationMessage);
+      return;
+    }
+    onSave({ nome_entrevistado: name, bairro: neighborhood, telefone: normalizeBrazilianPhone(phone), dados_fixos: fixed, respostas_dinamicas: dynamic });
   };
 
   return (
@@ -69,7 +76,7 @@ export function SubmissionEditModal({ isOpen, submission, survey, demographicOpt
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <label className="space-y-1.5 sm:col-span-2"><span className="text-xs font-black uppercase text-on-surface-variant">Nome</span><input value={name} onChange={event => setName(event.target.value)} disabled={isSaving} className="w-full rounded-xl border border-outline bg-white px-3 py-3 font-bold text-on-surface outline-none focus:border-primary dark:bg-slate-800" /></label>
               <label className="space-y-1.5"><span className="text-xs font-black uppercase text-on-surface-variant">Bairro</span><input value={neighborhood} onChange={event => setNeighborhood(event.target.value)} disabled={isSaving} className="w-full rounded-xl border border-outline bg-white px-3 py-3 font-bold text-on-surface outline-none focus:border-primary dark:bg-slate-800" /></label>
-              <label className="space-y-1.5"><span className="text-xs font-black uppercase text-on-surface-variant">Telefone</span><input value={phone} onChange={event => setPhone(event.target.value)} disabled={isSaving} className="w-full rounded-xl border border-outline bg-white px-3 py-3 font-bold text-on-surface outline-none focus:border-primary dark:bg-slate-800" /></label>
+              <label className="space-y-1.5"><span className="text-xs font-black uppercase text-on-surface-variant">Telefone</span><input value={formatBrazilianPhone(phone)} onChange={event => { setPhone(formatBrazilianPhone(event.target.value)); setPhoneError(null); }} disabled={isSaving} inputMode="numeric" className="w-full rounded-xl border border-outline bg-white px-3 py-3 font-bold text-on-surface outline-none focus:border-primary dark:bg-slate-800" />{phoneError && <span className="text-xs font-bold text-rose-600">{phoneError}</span>}</label>
             </div>
           </section>
 

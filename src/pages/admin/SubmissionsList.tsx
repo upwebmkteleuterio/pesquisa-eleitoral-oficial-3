@@ -4,7 +4,8 @@ import { surveyService } from "../../services/surveyService";
 import { submissionService } from "../../services/submissionService";
 import { userService } from "../../services/userService";
 import { exportSubmissions } from "../../utils/exportUtils";
-import { generateResponsesPDF } from "../../utils/pdfUtils";
+import { generateRespondentsPDF, generateResponsesPDF } from "../../utils/pdfUtils";
+import type { ResponsePdfType } from "../../components/admin/ResponsePdfModal";
 import { ExportModal } from "../../components/admin/ExportModal";
 import { ResponsePdfModal } from "../../components/admin/ResponsePdfModal";
 import { SubmissionEditModal } from "../../components/admin/SubmissionEditModal";
@@ -130,9 +131,13 @@ export default function SubmissionsList() {
     }
   };
 
-  const handleGenerateResponsesPDF = (memberId: string) => {
+  const handleGenerateResponsesPDF = (memberId: string, pdfType: ResponsePdfType) => {
     if (!selectedSurvey || !completeSubmissions.length || validSubmissionCount === 0 || (memberId !== "todos" && !validCountsByMember[memberId])) return;
-    generateResponsesPDF(selectedSurvey, completeSubmissions, allUsers || [], memberId, demographicOptions || []);
+    if (pdfType === "respondents") {
+      generateRespondentsPDF(selectedSurvey, completeSubmissions, memberId);
+    } else {
+      generateResponsesPDF(selectedSurvey, completeSubmissions, allUsers || [], memberId, demographicOptions || []);
+    }
     setIsResponsePdfModalOpen(false);
   };
 

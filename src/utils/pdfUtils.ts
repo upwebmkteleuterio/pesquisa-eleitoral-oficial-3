@@ -949,6 +949,67 @@ export const generateResponsesPDF = (
   doc.save(fileName);
 };
 
+export const generateRespondentsPDF = (
+  survey: Survey,
+  submissions: Submission[],
+  selectedMemberId = "todos",
+) => {
+  const validSubmissions = (Array.isArray(submissions) ? submissions : [])
+    .filter(submission => submission && submission.valida !== false)
+    .filter(submission => selectedMemberId === "todos" || getSubmissionMemberId(submission) === selectedMemberId)
+    .sort((a, b) => {
+      const dateDifference = new Date(b.data_coleta).getTime() - new Date(a.data_coleta).getTime();
+      return dateDifference || a.id.localeCompare(b.id);
+    });
+  if (validSubmissions.length === 0) return;
+
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 15;
+  const generatedAt = format(new Date(), "dd/MM/yyyy HH:mm", { locale: ptBR });
+
+  doc.setFillColor(5, 50, 97);
+  doc.rect(0, 0, pageWidth, 24, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.text("VERAXUS - DADOS DOS RESPONDENTES", margin, 10);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.text(reportValueToText(survey.nome), margin, 18);
+
+  autoTable(doc, {
+    startY: 34,
+    head: [["Nome", "Telefone", "Bairro"]],
+    body: validSubmissions.map(submission => [
+      reportValueToText(submission.nome_entrevistado),
+      reportValueToText(submission.telefone),
+      reportValueToText(submission.bairro),
+    ]),
+    theme: "grid",
+    margin: { top: 30, bottom: 20, left: margin, right: margin },
+    showHead: "everyPage",
+    headStyles: { fillColor: [5, 50, 97], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 9 },
+    styles: { fontSize: 9, cellPadding: 4, overflow: "linebreak", valign: "top" },
+    columnStyles: { 0: { cellWidth: 72 }, 1: { cellWidth: 42 }, 2: { cellWidth: pageWidth - margin * 2 - 114 } },
+  });
+
+  const pageCount = (doc.internal as any).getNumberOfPages();
+  for (let page = 1; page <= pageCount; page++) {
+    doc.setPage(page);
+    doc.setDrawColor(210, 210, 210);
+    doc.line(margin, pageHeight - 15, pageWidth - margin, pageHeight - 15);
+    doc.setTextColor(110, 110, 110);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text(`Gerado em ${generatedAt} - Página ${page} de ${pageCount}`, pageWidth - margin, pageHeight - 8, { align: "right" });
+  }
+
+  const fileName = `dados_respondentes_${reportValueToText(survey.nome).replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "").toLowerCase() || "pesquisa"}.pdf`;
+  doc.save(fileName);
+};
+
 const getSubmissionMemberId = (submission: Submission): string => {
   const memberId = submission.origem === "web" ? submission.referenciado_por : submission.pesquisador_id;
   return memberId || "sistema";

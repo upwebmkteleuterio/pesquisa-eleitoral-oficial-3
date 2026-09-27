@@ -2,6 +2,7 @@ import localforage from "localforage";
 import { supabase } from "@/src/integrations/supabase/client";
 import { getAudioExtension } from "./audioService";
 import { Submission, SubmissionEdits, SubmissionProgress, SubmissionProgressCallback } from "../types";
+import { normalizeBrazilianPhone } from "../utils/phoneUtils";
 
 const SUBMISSIONS_KEY = "electoral_submissions";
 const AUDIO_BUCKET = "submission-audio";
@@ -274,8 +275,11 @@ export const submissionService = {
   },
 
   async save(submission: Omit<Submission, "id" | "status_sincronizacao" | "valida"> & { id?: string; valida?: boolean }, onProgress?: SubmissionProgressCallback): Promise<Submission> {
+    const normalizedPhone = normalizeBrazilianPhone(submission.telefone);
     const newSubmission: Submission = {
       ...submission,
+      telefone: normalizedPhone,
+      dados_fixos: { ...submission.dados_fixos, telefone: normalizedPhone },
       id: submission.id || crypto.randomUUID(),
       status_sincronizacao: false,
       valida: submission.valida ?? true
@@ -472,7 +476,7 @@ export const submissionService = {
     const payload: SubmissionRecord = {};
     if (edits.nome_entrevistado !== undefined) payload.nome_entrevistado = edits.nome_entrevistado;
     if (edits.bairro !== undefined) payload.bairro = edits.bairro;
-    if (edits.telefone !== undefined) payload.telefone = edits.telefone;
+    if (edits.telefone !== undefined) payload.telefone = normalizeBrazilianPhone(edits.telefone);
     if (edits.respostas_dinamicas !== undefined) payload.respostas_dinamicas = edits.respostas_dinamicas;
     if (edits.dados_fixos) {
       FIXED_FIELDS.forEach(field => {

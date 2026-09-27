@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Check, ChevronDown, X } from "lucide-react";
 import type { Survey } from "../../types";
 
@@ -28,12 +29,22 @@ export function SurveySelectionControl({
   emptySelectionLabel = "Nenhuma selecionada",
   className = "",
 }: Props) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const selectionLabel = selectedSurveyIds.length
     ? `${selectedSurveyIds.length} selecionada${selectedSurveyIds.length === 1 ? "" : "s"}`
     : emptySelectionLabel;
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !containerRef.current?.contains(event.target)) onCancel();
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [isOpen, onCancel]);
+
   return (
-    <div className={`relative shrink-0 ${className}`}>
+    <div ref={containerRef} className={`relative shrink-0 ${className}`}>
       <button
         type="button"
         onClick={onOpen}

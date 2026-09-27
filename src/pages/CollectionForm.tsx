@@ -14,6 +14,7 @@ import { AudioConsentGate } from "../components/AudioConsentGate";
 import { AudioRecordingSession, getAudioErrorMessage } from "../services/audioService";
 import { SubmissionProgress } from "../types";
 import { SubmissionProgressOverlay } from "../components/SubmissionProgressOverlay";
+import { formatBrazilianPhone, isValidBrazilianPhone, normalizeBrazilianPhone, phoneValidationMessage } from "../utils/phoneUtils";
 
 import { useAuth } from "../contexts/AuthContext";
 
@@ -257,8 +258,8 @@ export default function CollectionForm() {
       pesquisador_id: user?.id || 'anonymous',
       nome_entrevistado: currentCollection.respondentData.nome,
       bairro: currentCollection.respondentData.bairro,
-      telefone: currentCollection.respondentData.telefone,
-      dados_fixos: currentCollection.respondentData,
+      telefone: normalizeBrazilianPhone(currentCollection.respondentData.telefone),
+      dados_fixos: { ...currentCollection.respondentData, telefone: normalizeBrazilianPhone(currentCollection.respondentData.telefone) },
       respostas_dinamicas: currentCollection.dynamicAnswers,
       geolocalizacao: location || { lat: 0, lng: 0 },
       data_coleta: new Date().toISOString(),
@@ -277,6 +278,10 @@ export default function CollectionForm() {
     
     if (!nome || !telefone || !sexo || !faixa_etaria || !escolaridade || !religiao || !renda || !estado_civil) {
       setValidationAlert("Por favor, preencha todos os campos obrigatórios (*)");
+      return;
+    }
+    if (!isValidBrazilianPhone(telefone)) {
+      setValidationAlert(phoneValidationMessage);
       return;
     }
     
@@ -348,8 +353,9 @@ export default function CollectionForm() {
                 <input 
                   className="w-full h-12 px-4 rounded-xl border border-outline bg-white dark:bg-slate-900 text-on-surface placeholder:text-on-surface-variant/40 focus:ring-2 focus:ring-primary-container focus:border-transparent outline-none transition-all" 
                   placeholder="(96) 99999-9999"
-                  value={currentCollection.respondentData.telefone}
-                  onChange={(e) => updateRespondentData({ telefone: e.target.value })}
+                  value={formatBrazilianPhone(currentCollection.respondentData.telefone)}
+                  onChange={(e) => updateRespondentData({ telefone: formatBrazilianPhone(e.target.value) })}
+                  inputMode="numeric"
                 />
               </div>
 

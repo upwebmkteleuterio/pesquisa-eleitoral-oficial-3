@@ -1,5 +1,5 @@
 import type { ReportDemographicField, ReportMergeCardData, ReportMergeConfig, Submission, Survey } from "../types";
-import { aggregateQuestionResponses, normalizeResponse } from "./responseNormalization";
+import { aggregateQuestionResponses, canonicalizeResponseValue, normalizeResponse } from "./responseNormalization";
 
 export const DEMOGRAPHIC_FIELD_LABELS: Record<ReportDemographicField, string> = {
   sexo: "Sexo",
@@ -51,14 +51,19 @@ export const buildReportMergeCard = (
 ): ReportMergeCardData => {
   const question = survey?.schema_dinamico?.questions?.find((item: any) => item.id === config.pergunta_id);
   const questionLabel = question?.label || config.pergunta_id;
-  const counts = aggregateQuestionResponses(questionLabel, validSubmissions.map(submission => submission.respostas_dinamicas?.[config.pergunta_id]));
+  const configuredOptions = (question?.options || []).map((option: string, index: number) => ({
+    label: option,
+    aliases: question?.option_aliases?.[index] || [],
+  }));
+  const counts = aggregateQuestionResponses(questionLabel, validSubmissions.map(submission => submission.respostas_dinamicas?.[config.pergunta_id]), configuredOptions);
   const byAnswer = new Map(counts.map(answer => [answer.name, { total: 0, breakdown: new Map<string, number>() }]));
 
   validSubmissions.forEach(submission => {
     const values = answerValues(submission.respostas_dinamicas?.[config.pergunta_id]);
     const demographic = getDemographicValueLabel(config.campo_demografico, submission.dados_fixos?.[config.campo_demografico]);
     (values.length ? values : [null]).forEach(value => {
-      const answerLabel = value === null ? "Sem resposta" : normalizeResponse(value, questionLabel) || "Sem resposta";
+      const canonicalValue = value === null ? null : canonicalizeResponseValue(value, configuredOptions);
+      const answerLabel = canonicalValue === null ? "Sem resposta" : normalizeResponse(canonicalValue, questionLabel) || "Sem resposta";
       const answer = byAnswer.get(answerLabel) || { total: 0, breakdown: new Map<string, number>() };
       answer.total += 1;
       answer.breakdown.set(demographic, (answer.breakdown.get(demographic) || 0) + 1);

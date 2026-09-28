@@ -124,6 +124,22 @@ const optionToText = (option: unknown): string | null => {
   return valueToText(option);
 };
 
+const optionAliases = (option: unknown): string[] => {
+  if (typeof option !== 'object' || option === null) return [];
+  const configured = option as { aliases?: unknown; option_aliases?: unknown };
+  const aliases = configured.aliases ?? configured.option_aliases;
+  return Array.isArray(aliases) ? aliases.filter((alias): alias is string => typeof alias === 'string') : [];
+};
+
+const canonicalConfiguredValue = (value: string, configuredOptions: unknown[]): string | undefined => {
+  for (const option of configuredOptions) {
+    const current = optionToText(option);
+    if (!current) continue;
+    if ([current, ...optionAliases(option)].some(label => label === value)) return current;
+  }
+  return undefined;
+};
+
 const damerauDistance = (left: string, right: string): number => {
   if (left === right) return 0;
   if (Math.abs(left.length - right.length) > 1) return 2;
@@ -166,6 +182,12 @@ const canonicalKeyFor = (value: string, candidateQuestion: boolean): string => {
   return knownCandidateAliases[key] || key;
 };
 
+export const canonicalizeResponseValue = (value: unknown, configuredOptions: unknown[] = []): string | null => {
+  const text = valueToText(value);
+  if (!text) return null;
+  return canonicalConfiguredValue(text, configuredOptions) || text;
+};
+
 export const normalizeResponse = (value: unknown, questionLabel?: unknown): string | null => {
   const text = valueToText(value);
   if (!text) return null;
@@ -189,8 +211,10 @@ export const aggregateQuestionResponses = (
   const add = (value: unknown, increment: number) => {
     const text = valueToText(value);
     if (!text) return;
-    const exactKey = canonicalKeyFor(text, candidateQuestion);
-    const normalizedKey = candidateQuestion && noCandidateAliases.has(normalizeKey(text))
+    const configuredValue = canonicalConfiguredValue(text, configuredOptions);
+    const canonicalText = configuredValue || text;
+    const exactKey = canonicalKeyFor(canonicalText, candidateQuestion);
+    const normalizedKey = candidateQuestion && noCandidateAliases.has(normalizeKey(canonicalText))
       ? normalizeKey(NO_CANDIDATE_LABEL)
       : exactKey;
     const fuzzyKey = candidateQuestion && normalizedKey !== normalizeKey(NO_CANDIDATE_LABEL)
@@ -203,7 +227,7 @@ export const aggregateQuestionResponses = (
       return;
     }
 
-    const normalizedLabel = normalizeResponse(text, questionLabel) || text;
+    const normalizedLabel = normalizeResponse(canonicalText, questionLabel) || canonicalText;
     counts.set(key, { name: normalizedLabel, value: increment });
     keys.push(key);
   };

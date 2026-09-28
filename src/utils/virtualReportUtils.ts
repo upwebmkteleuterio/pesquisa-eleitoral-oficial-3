@@ -125,6 +125,15 @@ const cardGroups = (card: VirtualReportCardConfig) => [
   ...legacyGroups(card),
 ];
 
+const canonicalVirtualValue = (value: string, survey: Survey | undefined, questionId: string): string => {
+  const question = survey?.schema_dinamico?.questions?.find((item: any) => item.id === questionId);
+  const normalize = (item: string) => item.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR').replace(/\s+/g, ' ').trim();
+  const valueKey = normalize(value);
+  const options = question?.options || [];
+  const match = options.find((option: string, index: number) => [option, ...(question?.option_aliases?.[index] || [])].some(label => normalize(String(label)) === valueKey));
+  return match === undefined ? value : String(match);
+};
+
 export const buildVirtualReportCard = (
   card: VirtualReportCardConfig,
   surveys: Survey[],
@@ -163,7 +172,7 @@ export const buildVirtualReportCard = (
   sources.forEach(ref => {
     const survey = surveys.find(item => item.id === ref.pesquisa_id);
     if (survey) sourceSurveyNames.add(survey.nome);
-    valuesFor(ref, submissionsBySurvey[ref.pesquisa_id]).forEach(value => {
+    valuesFor(ref, submissionsBySurvey[ref.pesquisa_id]).map(value => canonicalVirtualValue(value, survey, ref.pergunta_id)).forEach(value => {
       const key = virtualOptionKey({ ...ref, valor: value });
       const keys = optionKeysByValue.get(value) || new Set<string>();
       keys.add(key);
@@ -173,7 +182,7 @@ export const buildVirtualReportCard = (
 
   sources.forEach(ref => {
     const survey = surveys.find(item => item.id === ref.pesquisa_id);
-    valuesFor(ref, submissionsBySurvey[ref.pesquisa_id]).forEach(value => {
+    valuesFor(ref, submissionsBySurvey[ref.pesquisa_id]).map(value => canonicalVirtualValue(value, survey, ref.pergunta_id)).forEach(value => {
       const optionKey = virtualOptionKey({ ...ref, valor: value });
       const groupLabel = groupLabels.get(optionKey);
       const hasCollision = (optionKeysByValue.get(value)?.size || 0) > 1;
@@ -233,7 +242,7 @@ export const getVirtualAnswerOptions = (
   card.sources.forEach(ref => {
     const survey = surveys.find(item => item.id === ref.pesquisa_id);
     const question = questionLabel(survey, ref.pergunta_id);
-    valuesFor(ref, submissionsBySurvey[ref.pesquisa_id]).forEach(value => {
+    valuesFor(ref, submissionsBySurvey[ref.pesquisa_id]).map(value => canonicalVirtualValue(value, survey, ref.pergunta_id)).forEach(value => {
       const key = virtualOptionKey({ ...ref, valor: value });
       const current = options.get(key);
       options.set(key, {

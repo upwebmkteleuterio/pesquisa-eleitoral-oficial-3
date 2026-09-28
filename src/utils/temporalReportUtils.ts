@@ -111,7 +111,11 @@ export const getTemporalQuestionGroupOptions = (group: TemporalQuestionGroup, su
   };
   group.sources.forEach(source => {
     const definedEntries = questionOptionEntries(source.question);
-    const definedKeys = new Set(definedEntries.flatMap(([value, label]) => [normalizeSurveyOptionLabel(value), normalizeSurveyOptionLabel(label)]));
+    const definedKeys = new Set(definedEntries.flatMap(([value, label], index) => [
+      normalizeSurveyOptionLabel(value),
+      normalizeSurveyOptionLabel(label),
+      ...(source.question.option_aliases?.[index] || []).map(normalizeSurveyOptionLabel),
+    ]));
     definedEntries.forEach(([value, label]) => addOption(value, label));
     (submissionsBySurvey[source.surveyId] || []).filter(submission => submission.valida === true).forEach(submission => responseValues(submission.respostas_dinamicas?.[source.question.id]).forEach(value => {
       if (!definedKeys.has(normalizeSurveyOptionLabel(value))) addOption(value, value);
@@ -130,7 +134,7 @@ const canonicalResponseValues = (value: unknown, question: TemporalQuestionDefin
     addMapping(option.value, option.value);
     addMapping(option.label, option.value);
   });
-  questionOptionEntries(question).forEach(([raw, label]) => {
+  questionOptionEntries(question).forEach(([raw, label], index) => {
     const rawKey = normalizeSurveyOptionLabel(raw);
     const labelKey = normalizeSurveyOptionLabel(label);
     const canonical = options.find(option => normalizeSurveyOptionLabel(option.value) === rawKey || normalizeSurveyOptionLabel(option.label) === rawKey
@@ -138,6 +142,7 @@ const canonicalResponseValues = (value: unknown, question: TemporalQuestionDefin
     if (!canonical) return;
     addMapping(raw, canonical);
     addMapping(label, canonical);
+    (question.option_aliases?.[index] || []).forEach(alias => addMapping(alias, canonical));
   });
   return Array.from(new Set(responseValues(value).map(response => byKey.get(normalizeSurveyOptionLabel(response)))
     .filter((response): response is string => Boolean(response))));

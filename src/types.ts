@@ -225,6 +225,7 @@ export interface TemporalQuestionDefinition {
   label: string;
   type: string;
   options?: Array<string | number>;
+  option_aliases?: string[][];
   min?: number;
   max?: number;
   labels?: Record<string, string>;

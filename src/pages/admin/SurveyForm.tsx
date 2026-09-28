@@ -24,6 +24,7 @@ interface DynamicQuestion {
   label: string;
   required: boolean;
   options?: string[];
+  option_aliases?: string[][];
   min?: number;
   max?: number;
   labels?: Record<number, string>;
@@ -77,6 +78,7 @@ export default function SurveyForm() {
   const isCheckingStructure = isEditing && (isLoadingSubmissionCount || submissionCount === undefined);
   const isStructureLocked = isEditing && !isCheckingStructure && (submissionCount ?? 0) > 0;
   const canEditStructure = !isCheckingStructure && !isStructureLocked;
+  const canEditLabels = !isCheckingStructure;
 
   const { data: linkedResearchers } = useQuery({
     queryKey: ['linked_researchers', id],
@@ -149,6 +151,10 @@ export default function SurveyForm() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin_surveys'] });
       queryClient.invalidateQueries({ queryKey: ['surveys_list'] });
+      if (id) {
+        queryClient.invalidateQueries({ queryKey: ['survey', id] });
+        queryClient.invalidateQueries({ queryKey: ['survey-option-images', id] });
+      }
       navigate('/adm/formularios');
     }
   });
@@ -182,6 +188,22 @@ export default function SurveyForm() {
     if (!canEditStructure) return;
 
     setQuestions(currentQuestions => currentQuestions.map(q => q.id === id ? { ...q, ...updates } : q));
+  };
+
+  const handleUpdateQuestionLabel = (id: string, label: string) => {
+    if (!canEditLabels) return;
+    setQuestions(currentQuestions => currentQuestions.map(q => q.id === id ? { ...q, label } : q));
+  };
+
+  const handleUpdateOptionLabel = (questionId: string, optionIndex: number, label: string) => {
+    if (!canEditLabels) return;
+    setQuestions(currentQuestions => currentQuestions.map(question => {
+      if (question.id !== questionId || !question.options) return question;
+      return {
+        ...question,
+        options: question.options.map((option, index) => index === optionIndex ? label : option)
+      };
+    }));
   };
 
   const handleChangeQuestionType = (id: string, type: QuestionType) => {
@@ -274,6 +296,37 @@ export default function SurveyForm() {
       return;
     }
 
+    if (isStructureLocked) {
+      const normalizeLabel = (value: string) => value.trim().toLocaleLowerCase('pt-BR');
+      if (questions.some(question => !question.label.trim())) {
+        alert("Os rótulos das perguntas não podem ficar em branco.");
+        return;
+      }
+      for (const question of questions) {
+        const labelsByOption = new Map<string, number>();
+        for (const [optionIndex, option] of (question.options || []).entries()) {
+          const labels = [option, ...(question.option_aliases?.[optionIndex] || [])];
+          for (const label of labels) {
+            if (!label.trim()) {
+              alert("Os rótulos das alternativas não podem ficar em branco.");
+              return;
+            }
+            const key = normalizeLabel(label);
+            const previousOption = labelsByOption.get(key);
+            if (previousOption !== undefined && previousOption !== optionIndex) {
+              alert("Os rótulos atuais e antigos das alternativas devem ser únicos entre alternativas.");
+              return;
+            }
+            labelsByOption.set(key, optionIndex);
+          }
+        }
+      }
+    }
+
+    const schemaDinamico = {
+      ...(survey?.schema_dinamico || {}),
+      questions
+    };
     const payload: Survey & { researchers: string[]; clients: string[] } = {
       id: id || `form_${Date.now()}`,
       nome,
@@ -282,7 +335,7 @@ export default function SurveyForm() {
       permitir_link_publico: permitirLinkPublico,
       limite_total: hasTotalLimit ? limiteTotal : 999999,
       total_coletado: survey?.total_coletado || 0,
-      schema_dinamico: { questions },
+      schema_dinamico: schemaDinamico,
       acesso_global: selectedResearchers.length === 0,
       researchers: selectedResearchers,
       clients: selectedClients
@@ -491,7 +544,7 @@ export default function SurveyForm() {
               {isStructureLocked && (
                 <div className="mb-6 flex items-start gap-3 rounded-[2rem] border border-amber-200 bg-amber-50 p-6 text-sm font-bold text-amber-800 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
                   <AlertCircle size={20} className="mt-0.5 shrink-0" />
-                  <span>A estrutura deste formulário está bloqueada após a primeira coleta. Não é possível adicionar, remover, mover ou editar perguntas, tipos, obrigatoriedade e alternativas.</span>
+                  <span>A estrutura deste formulário está bloqueada após a primeira coleta. Você pode editar apenas os rótulos das perguntas e das alternativas existentes; adicionar, remover, mover ou alterar perguntas e alternativas não é permitido.</span>
                 </div>
               )}
               <div className="space-y-6 transition-all duration-500">
@@ -602,9 +655,9 @@ export default function SurveyForm() {
                                <input
                                  type="text"
                                  value={q.label}
-                                 onChange={(e) => handleUpdateQuestion(q.id, { label: e.target.value })}
+                                 onChange={(e) => handleUpdateQuestionLabel(q.id, e.target.value)}
                                  placeholder="Digite a pergunta aqui..."
-                                 disabled={!canEditStructure}
+                                 disabled={!canEditLabels}
                                  className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-2 border-transparent rounded-2xl transition-all font-bold text-lg placeholder:italic focus:outline-none focus:border-primary/20 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
                                />
                              </div>
@@ -630,15 +683,15 @@ export default function SurveyForm() {
                                          <input
                                            type="text"
                                            value={opt}
-                                           onChange={(e) => handleUpdateQuestion(q.id, { options: q.options?.map((option, index) => index === optIndex ? e.target.value : option) })}
-                                           disabled={!canEditStructure}
+                                           onChange={(e) => handleUpdateOptionLabel(q.id, optIndex, e.target.value)}
+                                           disabled={!canEditLabels}
                                            className="min-w-0 flex-1 px-4 pr-10 py-2 bg-slate-50 dark:bg-slate-800 border border-outline rounded-xl font-medium text-xs transition-colors focus:bg-white focus:border-primary/20 focus:outline-none disabled:cursor-not-allowed disabled:opacity-70"
                                          />
                                          <SurveyOptionImageControl
                                            surveyId={id}
                                            questionId={q.id}
                                            alternative={opt}
-                                           image={optionImages.find(image => image.pergunta_id === q.id && image.alternativa === opt)}
+                                           image={optionImages.find(image => image.pergunta_id === q.id && [opt, ...(q.option_aliases?.[optIndex] || [])].includes(image.alternativa))}
                                          />
                                        </div>
                                        <button

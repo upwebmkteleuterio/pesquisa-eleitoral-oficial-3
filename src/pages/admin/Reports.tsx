@@ -611,7 +611,11 @@ export default function Reports() {
       });
       Object.entries(dynamicResponses).forEach(([key, responses]) => {
         const question = questionById.get(key);
-        dynamicData[key] = aggregateQuestionResponses(question?.label || key, responses);
+        const configuredOptions = (question?.options || []).map((option: string, index: number) => ({
+          label: option,
+          aliases: question?.option_aliases?.[index] || [],
+        }));
+        dynamicData[key] = aggregateQuestionResponses(question?.label || key, responses, configuredOptions);
       });
     }
 

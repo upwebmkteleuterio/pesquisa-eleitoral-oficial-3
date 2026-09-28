@@ -599,7 +599,10 @@ export const generateReportPDF = async (survey: Survey, submissions: Submission[
   for (const question of questions) {
     const label = reportValueToText(question.label || question.id);
     currentY = addSectionTitle(label, currentY);
-    const configuredOptions = Array.isArray(question.options) ? question.options : [];
+    const configuredOptions = (Array.isArray(question.options) ? question.options : []).map((option: string, index: number) => ({
+      label: option,
+      aliases: question.option_aliases?.[index] || [],
+    }));
     const answers = validSubmissions.map(submission => submission.respostas_dinamicas?.[question.id]);
     const entries = aggregateQuestionResponses(label, answers, configuredOptions);
     const rows = entries.length > 0

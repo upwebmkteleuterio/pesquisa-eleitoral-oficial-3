@@ -59,7 +59,7 @@ export const generateInterviewPDF = async (
       ['Localidade/Bairro', submission.bairro || 'Não informado'],
     ],
     theme: 'striped',
-    headStyles: { textColor: [100, 100, 100], fontStyle: 'bold', fontSize: 8 },
+    headStyles: { fillColor: [5, 50, 97], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
     styles: { fontSize: 10, cellPadding: 3 },
   });
 

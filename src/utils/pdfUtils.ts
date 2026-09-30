@@ -12,7 +12,7 @@ import type { TemporalChartCapture } from './temporalPdfCapture';
 export const generateInterviewPDF = async (
   submission: Submission,
   survey?: Survey,
-  researcher?: Researcher,
+  researcher?: Pick<Researcher, "nome">,
   demographicOptions?: DemographicOption[]
 ): Promise<void> => {
   const doc = new jsPDF();

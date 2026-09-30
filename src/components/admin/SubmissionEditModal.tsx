@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Save, Trash2, X } from "lucide-react";
+import { FileDown, Save, Trash2, X } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Submission, SubmissionEdits, DemographicOption, Survey } from "../../types";
 import { formatBrazilianPhone, isValidBrazilianPhone, normalizeBrazilianPhone, phoneValidationMessage } from "../../utils/phoneUtils";
@@ -12,10 +12,12 @@ interface SubmissionEditModalProps {
   demographicOptions?: DemographicOption[];
   isSaving: boolean;
   isDeleting: boolean;
+  isGeneratingPdf: boolean;
   error: string | null;
   onClose: () => void;
   onSave: (edits: SubmissionEdits) => void;
   onDelete: () => void;
+  onGeneratePdf: () => void;
 }
 
 const demographicFields = [
@@ -27,7 +29,7 @@ const demographicFields = [
   ["estado_civil", "Estado civil"],
 ] as const;
 
-export function SubmissionEditModal({ isOpen, submission, survey, demographicOptions, isSaving, isDeleting, error, onClose, onSave, onDelete }: SubmissionEditModalProps) {
+export function SubmissionEditModal({ isOpen, submission, survey, demographicOptions, isSaving, isDeleting, isGeneratingPdf, error, onClose, onSave, onDelete, onGeneratePdf }: SubmissionEditModalProps) {
   const [name, setName] = useState("");
   const [neighborhood, setNeighborhood] = useState("");
   const [phone, setPhone] = useState("");
@@ -96,6 +98,7 @@ export function SubmissionEditModal({ isOpen, submission, survey, demographicOpt
         <footer className="flex shrink-0 flex-col gap-3 border-t border-outline bg-white p-5 sm:flex-row sm:items-center sm:justify-between dark:bg-slate-900">
           <button type="button" onClick={onDelete} disabled={isSaving} className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200 px-5 py-3 font-black text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-900/50 dark:text-rose-400 dark:hover:bg-rose-950/30"><Trash2 size={18} />{isDeleting ? "Excluindo..." : "Excluir resposta"}</button>
           <div className="flex flex-col gap-3 sm:flex-row">
+            <button type="button" onClick={onGeneratePdf} disabled={isGeneratingPdf || isSaving} className="inline-flex items-center justify-center gap-2 rounded-xl border border-outline px-5 py-3 font-black text-on-surface-variant hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-slate-800"><FileDown size={18} />{isGeneratingPdf ? "Gerando PDF..." : "Baixar PDF"}</button>
             <button type="button" onClick={onClose} disabled={isSaving} className="rounded-xl border border-outline px-5 py-3 font-black text-on-surface-variant hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-800">Cancelar</button>
             <button type="submit" disabled={isSaving} className={cn("inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 font-black text-white shadow-lg shadow-primary/20 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50")}><Save size={18} />{isSaving ? "Salvando..." : "Salvar alteração"}</button>
           </div>

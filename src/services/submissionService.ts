@@ -540,9 +540,11 @@ export const submissionService = {
     userId?: string,
     clientRead = false,
     researcherId?: string,
+    searchTerm?: string,
   ): Promise<SubmissionPage> {
     const safePage = Number.isInteger(page) && page > 0 ? page : 1;
     const safeMemberId = safeResearcherId(researcherId);
+    const search = safeSearchTerm(searchTerm);
     if (safeMemberId === undefined) return { data: [], total: 0 };
 
     if (navigator.onLine) {
@@ -552,6 +554,7 @@ export const submissionService = {
         .eq('pesquisa_id', surveyId);
       if (onlyValid) query = query.eq('valida', true);
       if (safeMemberId) query = query.or(`pesquisador_id.eq.${safeMemberId},referenciado_por.eq.${safeMemberId}`);
+      if (search) query = query.ilike('nome_entrevistado', `%${search}%`);
 
       const { data, count, error } = await query
         .order('data_coleta', { ascending: false })
@@ -560,10 +563,12 @@ export const submissionService = {
       if (!error && data) return { data: data.map(mapSubmission), total: count || 0 };
     }
 
+    const normalizedSearch = search.toLocaleLowerCase();
     const local = await this.getBySurveyId(surveyId, onlyValid, userId, clientRead);
-    const filtered = safeMemberId
-      ? local.filter(submission => submission.pesquisador_id === safeMemberId || submission.referenciado_por === safeMemberId)
-      : local;
+    const filtered = local.filter(submission =>
+      (!safeMemberId || submission.pesquisador_id === safeMemberId || submission.referenciado_por === safeMemberId)
+      && (!normalizedSearch || submission.nome_entrevistado?.toLocaleLowerCase().includes(normalizedSearch))
+    );
     const sorted = [...filtered].sort((a, b) => new Date(b.data_coleta).getTime() - new Date(a.data_coleta).getTime());
     const start = (safePage - 1) * ADMIN_PAGE_SIZE;
     return { data: sorted.slice(start, start + ADMIN_PAGE_SIZE), total: sorted.length };

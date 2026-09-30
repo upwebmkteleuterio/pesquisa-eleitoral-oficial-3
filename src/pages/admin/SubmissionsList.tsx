@@ -4,7 +4,7 @@ import { surveyService } from "../../services/surveyService";
 import { submissionService } from "../../services/submissionService";
 import { userService } from "../../services/userService";
 import { exportSubmissions } from "../../utils/exportUtils";
-import { generateRespondentsPDF, generateResponsesPDF } from "../../utils/pdfUtils";
+import { generateInterviewPDF, generateRespondentsPDF, generateResponsesPDF } from "../../utils/pdfUtils";
 import type { ResponsePdfType } from "../../components/admin/ResponsePdfModal";
 import { ExportModal } from "../../components/admin/ExportModal";
 import { ResponsePdfModal } from "../../components/admin/ResponsePdfModal";
@@ -13,7 +13,7 @@ import { AudioPlaybackModal } from "../../components/admin/AudioPlaybackModal";
 import Pagination from "../../components/Pagination";
 import { Submission, SubmissionEdits } from "../../types";
 import type { SubmissionPage } from "../../services/submissionService";
-import { FileSpreadsheet, FileDown, ChevronDown, Filter, Database, Calendar, Clock, User, Globe, Smartphone, UserPlus, Lightbulb, PlayCircle } from "lucide-react";
+import { FileSpreadsheet, FileDown, Search, ChevronDown, Filter, Database, Calendar, Clock, User, Globe, Smartphone, UserPlus, Lightbulb, PlayCircle } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { format } from "date-fns";
 import { useAuth } from "../../contexts/AuthContext";
@@ -26,16 +26,18 @@ export default function SubmissionsList() {
   const canPlayAudio = profile?.role === 'admin' || isClient;
   const [selectedSurveyId, setSelectedSurveyId] = useState<string>("");
   const [selectedResearcherId, setSelectedResearcherId] = useState<string>("todos");
+  const [searchTerm, setSearchTerm] = useState("");
   const [page, setPage] = useState(1);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isResponsePdfModalOpen, setIsResponsePdfModalOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isGeneratingIndividualPdf, setIsGeneratingIndividualPdf] = useState(false);
   const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null);
   const [audioSubmission, setAudioSubmission] = useState<Submission | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const queryClient = useQueryClient();
-  const submissionQueryKey = ['submissions', 'list', user?.id || 'anonymous', selectedSurveyId, selectedResearcherId, page];
+  const submissionQueryKey = ['submissions', 'list', user?.id || 'anonymous', selectedSurveyId, selectedResearcherId, searchTerm, page];
   const { data: surveys } = useQuery({
     queryKey: ['admin_surveys', user?.id || 'anonymous', profile?.role || 'unknown'],
     queryFn: () => surveyService.getAllForUser(user?.id, profile?.role),
@@ -45,7 +47,7 @@ export default function SubmissionsList() {
   const { data: demographicOptions } = useQuery({ queryKey: ['demographic_options_list'], queryFn: () => surveyService.getDemographicOptions() });
   const { data: submissionsPage, isLoading } = useQuery<SubmissionPage>({
     queryKey: submissionQueryKey,
-    queryFn: () => submissionService.getBySurveyIdPaged(selectedSurveyId, page, isClient, isClient ? user?.id : undefined, isClient, selectedResearcherId),
+    queryFn: () => submissionService.getBySurveyIdPaged(selectedSurveyId, page, isClient, isClient ? user?.id : undefined, isClient, selectedResearcherId, searchTerm),
     enabled: !!selectedSurveyId && (!isClient || surveys?.some(survey => survey.id === selectedSurveyId)),
   });
   const submissions = submissionsPage?.data;
@@ -76,7 +78,7 @@ export default function SubmissionsList() {
 
   useEffect(() => {
     setPage(1);
-  }, [selectedSurveyId, selectedResearcherId]);
+  }, [selectedSurveyId, selectedResearcherId, searchTerm]);
 
   const validationMutation = useMutation({
     mutationFn: ({ id, valida }: { id: string; valida: boolean }) => submissionService.updateValidation(id, valida),
@@ -117,6 +119,18 @@ export default function SubmissionsList() {
     });
     return counts;
   }, [completeSubmissions]);
+
+  const handleGenerateIndividualPdf = async () => {
+    if (!selectedSubmission || !selectedSurvey || isGeneratingIndividualPdf) return;
+    setIsGeneratingIndividualPdf(true);
+    try {
+      const researcherId = selectedSubmission.origem === "web" ? selectedSubmission.referenciado_por : selectedSubmission.pesquisador_id;
+      const researcher = allUsers?.find(item => item.id === researcherId) || publicDirectoryById.get(researcherId || "");
+      await generateInterviewPDF(selectedSubmission, selectedSurvey, researcher, demographicOptions || []);
+    } finally {
+      setIsGeneratingIndividualPdf(false);
+    }
+  };
 
   const handleExport = async (formatType: 'xlsx' | 'csv') => {
     if (!selectedSurvey) return;
@@ -167,9 +181,12 @@ export default function SubmissionsList() {
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <div><h1 className="text-3xl font-black tracking-tight text-on-surface">Respostas</h1><p className="font-medium text-on-surface-variant">Dados brutos coletados em campo e web</p></div>
-        <div className="relative min-w-[320px]">
-          <select value={selectedSurveyId} onChange={event => setSelectedSurveyId(event.target.value)} className="w-full appearance-none rounded-2xl border border-outline bg-white py-3 pl-10 pr-10 text-sm font-bold shadow-sm outline-none transition-all focus:ring-2 focus:ring-primary/20 dark:bg-slate-900"><option value="">Selecionar Formulário...</option>{surveys?.map(survey => <option key={survey.id} value={survey.id}>{survey.nome}</option>)}</select>
-          <Filter className="absolute left-3.5 top-1/2 -translate-y-1/2 text-primary" size={18} /><ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant" size={18} />
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <label className="relative min-w-[240px]"><span className="sr-only">Buscar por nome do entrevistado</span><input type="search" value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="Buscar entrevistado..." className="w-full rounded-xl border border-outline bg-white py-3 pl-10 pr-3 text-sm font-bold shadow-sm outline-none focus:ring-2 focus:ring-primary/20 dark:bg-slate-900" /><Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-primary" size={18} /></label>
+          <div className="relative min-w-[320px]">
+            <select value={selectedSurveyId} onChange={event => setSelectedSurveyId(event.target.value)} className="w-full appearance-none rounded-2xl border border-outline bg-white py-3 pl-10 pr-10 text-sm font-bold shadow-sm outline-none transition-all focus:ring-2 focus:ring-primary/20 dark:bg-slate-900"><option value="">Selecionar Formulário...</option>{surveys?.map(survey => <option key={survey.id} value={survey.id}>{survey.nome}</option>)}</select>
+            <Filter className="absolute left-3.5 top-1/2 -translate-y-1/2 text-primary" size={18} /><ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant" size={18} />
+          </div>
         </div>
       </div>
 
@@ -215,7 +232,7 @@ export default function SubmissionsList() {
 
       <ExportModal isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)} onExport={handleExport} isLoading={isExporting} />
       <ResponsePdfModal isOpen={isResponsePdfModalOpen} members={allUsers || []} validCount={validSubmissionCount} validCountsByMember={validCountsByMember} onClose={() => setIsResponsePdfModalOpen(false)} onGenerate={handleGenerateResponsesPDF} />
-      <SubmissionEditModal isOpen={!!selectedSubmission} submission={selectedSubmission} survey={selectedSurvey} demographicOptions={demographicOptions} isSaving={editMutation.isPending || deleteMutation.isPending} isDeleting={deleteMutation.isPending} error={deleteMutation.error ? "Não foi possível excluir a resposta." : editMutation.error instanceof Error ? editMutation.error.message : editMutation.error ? "Não foi possível salvar a alteração." : null} onClose={() => { if (!editMutation.isPending && !deleteMutation.isPending) { setSelectedSubmission(null); editMutation.reset(); deleteMutation.reset(); } }} onSave={edits => { if (selectedSubmission) { deleteMutation.reset(); editMutation.mutate({ id: selectedSubmission.id, edits }); } }} onDelete={handleDelete} />
+      <SubmissionEditModal isOpen={!!selectedSubmission} submission={selectedSubmission} survey={selectedSurvey} demographicOptions={demographicOptions} isSaving={editMutation.isPending || deleteMutation.isPending} isDeleting={deleteMutation.isPending} isGeneratingPdf={isGeneratingIndividualPdf} error={deleteMutation.error ? "Não foi possível excluir a resposta." : editMutation.error instanceof Error ? editMutation.error.message : editMutation.error ? "Não foi possível salvar a alteração." : null} onClose={() => { if (!editMutation.isPending && !deleteMutation.isPending) { setSelectedSubmission(null); editMutation.reset(); deleteMutation.reset(); } }} onSave={edits => { if (selectedSubmission) { deleteMutation.reset(); editMutation.mutate({ id: selectedSubmission.id, edits }); } }} onDelete={handleDelete} onGeneratePdf={handleGenerateIndividualPdf} />
       <AudioPlaybackModal submission={audioSubmission} onClose={() => setAudioSubmission(null)} />
     </div>
   );

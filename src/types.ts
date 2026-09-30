@@ -117,7 +117,7 @@ export interface SubmissionEdits {
   respostas_dinamicas?: Record<string, any>;
 }
 
-export type ReportDemographicField = "sexo" | "faixa_etaria" | "renda" | "escolaridade" | "religiao" | "estado_civil";
+export type ReportDemographicField = "sexo" | "faixa_etaria" | "renda" | "escolaridade" | "religiao" | "estado_civil" | "bairro";
 
 export interface ReportMergeConfig {
   id: string;

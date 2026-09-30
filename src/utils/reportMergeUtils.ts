@@ -8,6 +8,7 @@ export const DEMOGRAPHIC_FIELD_LABELS: Record<ReportDemographicField, string> = 
   escolaridade: "Escolaridade",
   religiao: "Religião",
   estado_civil: "Estado civil",
+  bairro: "Bairro",
 };
 
 const DEMOGRAPHIC_VALUE_LABELS: Record<ReportDemographicField, Record<string, string>> = {
@@ -29,10 +30,18 @@ const DEMOGRAPHIC_VALUE_LABELS: Record<ReportDemographicField, Record<string, st
   },
   religiao: { catolico: "Católico", evangelico: "Evangélico", espirita: "Espírita", umbanda_candomble: "Umbanda/Candomblé", outra: "Outra", sem_religiao: "Sem religião" },
   estado_civil: { solteiro: "Solteiro", casado: "Casado", divorciado: "Divorciado", viuvo: "Viúvo", uniao_estavel: "União estável" },
+  bairro: {},
 };
+
+export const normalizeNeighborhoodKey = (value: string): string => value
+  .normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "")
+  .toLocaleLowerCase("pt-BR")
+  .replace(/[^\p{L}\p{N}]+/gu, "");
 
 export const getDemographicValueLabel = (field: ReportDemographicField, value: unknown): string => {
   if (typeof value !== "string" || !value.trim()) return "Não informado";
+  if (field === "bairro") return value.trim().replace(/\s+/g, " ");
   const normalizedValue = value.trim().toLocaleLowerCase("pt-BR");
   const mappedValue = DEMOGRAPHIC_VALUE_LABELS[field]?.[normalizedValue];
   if (mappedValue) return mappedValue;
@@ -56,17 +65,23 @@ export const buildReportMergeCard = (
     aliases: question?.option_aliases?.[index] || [],
   }));
   const counts = aggregateQuestionResponses(questionLabel, validSubmissions.map(submission => submission.respostas_dinamicas?.[config.pergunta_id]), configuredOptions);
-  const byAnswer = new Map(counts.map(answer => [answer.name, { total: 0, breakdown: new Map<string, number>() }]));
+  const createAnswer = () => ({ total: 0, breakdown: new Map<string, number>(), breakdownLabels: new Map<string, string>() });
+  const byAnswer = new Map(counts.map(answer => [answer.name, createAnswer()]));
 
   validSubmissions.forEach(submission => {
     const values = answerValues(submission.respostas_dinamicas?.[config.pergunta_id]);
-    const demographic = getDemographicValueLabel(config.campo_demografico, submission.dados_fixos?.[config.campo_demografico]);
+    const demographicValue = config.campo_demografico === "bairro" ? submission.bairro : submission.dados_fixos?.[config.campo_demografico];
+    const demographic = getDemographicValueLabel(config.campo_demografico, demographicValue);
+    const demographicKey = config.campo_demografico === "bairro"
+      ? typeof demographicValue === "string" && demographicValue.trim() ? normalizeNeighborhoodKey(demographicValue) : ""
+      : demographic;
     (values.length ? values : [null]).forEach(value => {
       const canonicalValue = value === null ? null : canonicalizeResponseValue(value, configuredOptions);
       const answerLabel = canonicalValue === null ? "Sem resposta" : normalizeResponse(canonicalValue, questionLabel) || "Sem resposta";
-      const answer = byAnswer.get(answerLabel) || { total: 0, breakdown: new Map<string, number>() };
+      const answer = byAnswer.get(answerLabel) || createAnswer();
       answer.total += 1;
-      answer.breakdown.set(demographic, (answer.breakdown.get(demographic) || 0) + 1);
+      answer.breakdown.set(demographicKey, (answer.breakdown.get(demographicKey) || 0) + 1);
+      if (!answer.breakdownLabels.has(demographicKey)) answer.breakdownLabels.set(demographicKey, demographic);
       byAnswer.set(answerLabel, answer);
     });
   });
@@ -77,8 +92,8 @@ export const buildReportMergeCard = (
     total: answer.total,
     percentage: denominator ? (answer.total / denominator) * 100 : 0,
     breakdown: Array.from(answer.breakdown.entries())
-      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], "pt-BR"))
-      .map(([breakdownLabel, total]) => ({ label: breakdownLabel, total, percentage: answer.total ? (total / answer.total) * 100 : 0 })),
+      .sort((left, right) => right[1] - left[1] || (answer.breakdownLabels.get(left[0]) || left[0]).localeCompare(answer.breakdownLabels.get(right[0]) || right[0], "pt-BR"))
+      .map(([key, total]) => ({ label: answer.breakdownLabels.get(key) || key, total, percentage: answer.total ? (total / answer.total) * 100 : 0 })),
   })).sort((left, right) => right.total - left.total || left.label.localeCompare(right.label, "pt-BR"));
 
   return {

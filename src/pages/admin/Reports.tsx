@@ -978,7 +978,7 @@ export default function Reports() {
           {distributionCards.length > 0 && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
               {distributionCards.map(item => {
-                if (item.type === "merge") return <div key={item.card.config.id}><ReportQuestionMergeCard card={item.card} isAdmin={isAdmin} onEdit={handleEditQuestionMerge} onDelete={handleDeleteQuestionMerge} /></div>;
+                if (item.type === "merge") return <div key={item.card.config.id}><ReportQuestionMergeCard card={item.card} optionImages={surveyOptionImages} isAdmin={isAdmin} onEdit={handleEditQuestionMerge} onDelete={handleDeleteQuestionMerge} /></div>;
                 const { id: key, question, data } = item;
                 return (
                   <section key={key} className="bg-white dark:bg-slate-900 p-12 rounded-[3.5rem] border border-outline shadow-sm space-y-10 animate-in fade-in zoom-in-95 duration-500">

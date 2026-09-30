@@ -704,6 +704,38 @@ export default function Reports() {
     return { total: reportSubmissions.length, demographicData, dynamicData };
   }, [allVirtualSubmissions, selectedSurveyIds, validSubmissions, selectedSurvey]);
 
+  const distributionCards = useMemo(() => {
+    const dynamicData = stats?.dynamicData || {};
+    const questions = selectedSurvey?.schema_dinamico?.questions || [];
+    const questionPositions = new Map<string, number>(questions.map((question: any, index: number) => [question.id, index]));
+    const originalCards = [
+      ...questions.flatMap((question: any) => Object.hasOwn(dynamicData, question.id)
+        ? [{ type: "question" as const, id: question.id, question, data: dynamicData[question.id] }]
+        : []),
+      ...Object.entries(dynamicData).flatMap(([id, data]) => questionPositions.has(id)
+        ? []
+        : [{ type: "question" as const, id, question: undefined, data }]),
+    ];
+    const mergesAtIndex = new Map<number, typeof reportQuestionMergeCards>();
+
+    (selectedSurveyIds.length === 1 ? reportQuestionMergeCards : []).forEach(card => {
+      const anchorPosition = card.config.pergunta_ids.reduce(
+        (latest, id) => Math.max(latest, questionPositions.get(id) ?? -1),
+        -1,
+      );
+      const insertionIndex = anchorPosition < 0
+        ? originalCards.length
+        : originalCards.findIndex(item => item.type === "question" && (questionPositions.get(item.id) ?? -1) > anchorPosition);
+      const index = insertionIndex < 0 ? originalCards.length : insertionIndex;
+      mergesAtIndex.set(index, [...(mergesAtIndex.get(index) || []), card]);
+    });
+
+    return Array.from({ length: originalCards.length + 1 }, (_, index) => [
+      ...(mergesAtIndex.get(index) || []).map(card => ({ type: "merge" as const, card })),
+      ...(index < originalCards.length ? [originalCards[index]] : []),
+    ]).flat();
+  }, [stats?.dynamicData, selectedSurvey, selectedSurveyIds.length, reportQuestionMergeCards]);
+
   const renderChart = (data: any[], question?: { id: string; label?: string }) => {
     const chartData = data.map(item => ({
       ...item,
@@ -939,15 +971,15 @@ export default function Reports() {
               onDelete={handleDeleteReportMerge}
             />
             <ReportMergeActions isAdmin={isAdmin} canExport={reportMergeCards.length > 0 || reportQuestionMergeCards.length > 0} onCreate={handleOpenReportMerge} onExport={handleExportReportMerges} />
-            {reportQuestionMergeCards.length > 0 && <section className="space-y-5" aria-label="Mesclagens de perguntas"><h2 className="text-2xl font-black text-on-surface">Perguntas mescladas</h2><div className="grid grid-cols-1 gap-5 xl:grid-cols-2">{reportQuestionMergeCards.map(card => <div key={card.config.id}><ReportQuestionMergeCard card={card} isAdmin={isAdmin} onEdit={handleEditQuestionMerge} onDelete={handleDeleteQuestionMerge} /></div>)}</div></section>}
             {questionMergeQueryError instanceof Error && <p role="alert" className="rounded-2xl bg-rose-50 p-4 text-sm font-bold text-rose-700 dark:bg-rose-950/30 dark:text-rose-300">{questionMergeQueryError.message}</p>}
             {questionMergeDeleteMutation.error instanceof Error && <p role="alert" className="rounded-2xl bg-rose-50 p-4 text-sm font-bold text-rose-700 dark:bg-rose-950/30 dark:text-rose-300">{questionMergeDeleteMutation.error.message}</p>}
           </>}
 
-          {stats && Object.keys(stats.dynamicData).length > 0 && (
+          {distributionCards.length > 0 && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-              {(Object.entries(stats.dynamicData) as [string, any[]][]).map(([key, data]) => {
-                const question = selectedSurvey?.schema_dinamico?.questions?.find((item: any) => item.id === key);
+              {distributionCards.map(item => {
+                if (item.type === "merge") return <div key={item.card.config.id}><ReportQuestionMergeCard card={item.card} isAdmin={isAdmin} onEdit={handleEditQuestionMerge} onDelete={handleDeleteQuestionMerge} /></div>;
+                const { id: key, question, data } = item;
                 return (
                   <section key={key} className="bg-white dark:bg-slate-900 p-12 rounded-[3.5rem] border border-outline shadow-sm space-y-10 animate-in fade-in zoom-in-95 duration-500">
                     <div className="flex items-start justify-between gap-4 border-b border-outline pb-6">

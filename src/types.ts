@@ -151,6 +151,29 @@ export interface ReportMergeCardData {
   answers: ReportMergeAnswer[];
 }
 
+export interface ReportQuestionMergeConfig {
+  id: string;
+  pesquisa_id: string;
+  nome: string;
+  pergunta_ids: string[];
+  criado_por?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReportQuestionMergeAnswer {
+  label: string;
+  total: number;
+  percentage: number;
+}
+
+export interface ReportQuestionMergeCardData {
+  config: ReportQuestionMergeConfig;
+  questionLabels: string[];
+  totalAnswers: number;
+  answers: ReportQuestionMergeAnswer[];
+}
+
 export interface VirtualReportQuestionRef {
   pesquisa_id: string;
   pergunta_id: string;

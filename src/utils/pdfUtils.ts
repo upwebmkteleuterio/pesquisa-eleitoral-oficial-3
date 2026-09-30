@@ -2,7 +2,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Submission, Survey, Researcher, DemographicOption, ReportMergeCardData, VirtualReportCardData, TemporalReportData, TemporalReportFilters, TemporalRegionalSlice } from '../types';
+import { Submission, Survey, Researcher, DemographicOption, ReportMergeCardData, ReportQuestionMergeCardData, VirtualReportCardData, TemporalReportData, TemporalReportFilters, TemporalRegionalSlice } from '../types';
 import type { RankedResearcher } from '../hooks/useRankingData';
 import { aggregateQuestionResponses } from './responseNormalization';
 import { addTemporalVisualizationPages } from './temporalPdfCharts';
@@ -750,8 +750,8 @@ export const generateVirtualReportPDF = async (
   doc.save(fileName);
 };
 
-export const generateReportMergesPDF = (survey: Survey, cards: ReportMergeCardData[]) => {
-  if (cards.length === 0) return;
+export const generateReportMergesPDF = (survey: Survey, cards: ReportMergeCardData[], questionCards: ReportQuestionMergeCardData[] = []) => {
+  if (cards.length === 0 && questionCards.length === 0) return;
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -762,7 +762,7 @@ export const generateReportMergesPDF = (survey: Survey, cards: ReportMergeCardDa
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(17);
-  doc.text('MESCLAGENS DEMOGRÁFICAS', margin, 14);
+  doc.text('MESCLAGENS DE RELATÓRIO', margin, 14);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.text(reportValueToText(survey.nome), margin, 23);
@@ -800,6 +800,53 @@ export const generateReportMergesPDF = (survey: Survey, cards: ReportMergeCardDa
     });
     currentY = ((doc as any).lastAutoTable?.finalY || currentY) + 10;
   });
+
+  if (questionCards.length > 0) {
+    if (currentY > pageHeight - 45) {
+      doc.addPage();
+      currentY = 24;
+    }
+    doc.setTextColor(5, 50, 97);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.text('PERGUNTAS MESCLADAS', margin, currentY);
+    currentY += 8;
+    questionCards.forEach(card => {
+      if (currentY > pageHeight - 55) {
+        doc.addPage();
+        currentY = 24;
+      }
+      doc.setTextColor(5, 50, 97);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text(doc.splitTextToSize(`${card.config.nome} - ${card.totalAnswers} marcações`, pageWidth - margin * 2), margin, currentY);
+      currentY += 6;
+      autoTable(doc, {
+        startY: currentY,
+        head: [['Alternativa', 'Total de marcações', '% das marcações']],
+        body: card.answers.length
+          ? card.answers.map(answer => [answer.label, String(answer.total), `${answer.percentage.toFixed(1)}%`])
+          : [['Sem respostas', '0', '0.0%']],
+        theme: 'grid',
+        margin: { top: 20, bottom: 18, left: margin, right: margin },
+        headStyles: { fillColor: [16, 185, 129], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
+        styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak', valign: 'top' },
+        columnStyles: { 0: { cellWidth: pageWidth - margin * 2 - 65 }, 1: { cellWidth: 38, halign: 'right' }, 2: { cellWidth: 27, halign: 'right' } },
+        showHead: 'everyPage',
+      });
+      currentY = ((doc as any).lastAutoTable?.finalY || currentY) + 4;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(80, 80, 80);
+      const sources = doc.splitTextToSize(`Perguntas de origem: ${card.questionLabels.join(' · ')}`, pageWidth - margin * 2);
+      if (currentY + sources.length * 4 > pageHeight - 18) {
+        doc.addPage();
+        currentY = 24;
+      }
+      doc.text(sources, margin, currentY);
+      currentY += sources.length * 4 + 8;
+    });
+  }
 
   const generatedAt = format(new Date(), "dd/MM/yyyy HH:mm", { locale: ptBR });
   const pageCount = (doc.internal as any).getNumberOfPages();

@@ -6,9 +6,12 @@ import { surveyService } from "../../services/surveyService";
 import { submissionService } from "../../services/submissionService";
 import { responseMergeService } from "../../services/responseMergeService";
 import { reportMergeService } from "../../services/reportMergeService";
+import { reportQuestionMergeService } from "../../services/reportQuestionMergeService";
 import { surveyOptionImageService } from "../../services/surveyOptionImageService";
 import { SurveyOptionImage } from "../../components/SurveyOptionImage";
 import { ReportBarShape } from "../../components/admin/ReportBarShape";
+import { ReportQuestionMergeCard } from "../../components/admin/ReportQuestionMergeCard";
+import { ReportQuestionMergeModal } from "../../components/admin/ReportQuestionMergeModal";
 import type { SurveyOptionImage as SurveyOptionImageMetadata } from "../../types";
 import { findSurveyOptionImage } from "../../utils/surveyOptionImageUtils";
 import { useAuth } from "../../contexts/AuthContext";
@@ -22,9 +25,10 @@ import { VirtualReportNormalizeModal } from "../../components/admin/VirtualRepor
 import { VirtualReportConfigModal } from "../../components/admin/VirtualReportConfigModal";
 import { SurveySelectionControl } from "../../components/admin/SurveySelectionControl";
 import { TemporalReport } from "../../components/admin/TemporalReport";
-import type { ReportDemographicField, ReportMergeConfig, VirtualReportCardConfig, VirtualReportMergeConfig, VirtualReportOptionGroup, VirtualReportQuestionRef } from "../../types";
+import type { ReportDemographicField, ReportMergeConfig, ReportQuestionMergeConfig, VirtualReportCardConfig, VirtualReportMergeConfig, VirtualReportOptionGroup, VirtualReportQuestionRef } from "../../types";
 import { virtualReportMergeService } from "../../services/virtualReportMergeService";
 import { applyVirtualAnswerGroup, applyVirtualAnswerGroups, buildInitialVirtualCards, buildVirtualReportData, configToVirtualCards, getVirtualAnswerOptions, mergeVirtualCard, unmergeVirtualCard } from "../../utils/virtualReportUtils";
+import { buildReportQuestionMergeCard, isEligibleReportQuestion } from "../../utils/reportQuestionMergeUtils";
 import {
   PieChart as PieChartIcon,
   BarChart as BarChartIcon, Users,
@@ -110,6 +114,9 @@ export default function Reports() {
   const [mergeQuestionId, setMergeQuestionId] = useState<string | null>(null);
   const [reportMergeModalOpen, setReportMergeModalOpen] = useState(false);
   const [editingReportMerge, setEditingReportMerge] = useState<ReportMergeConfig | null>(null);
+  const [questionMergeModalOpen, setQuestionMergeModalOpen] = useState(false);
+  const [questionMergeInitialId, setQuestionMergeInitialId] = useState<string | null>(null);
+  const [editingQuestionMerge, setEditingQuestionMerge] = useState<ReportQuestionMergeConfig | null>(null);
   const { user, profile } = useAuth();
 
   const queryClient = useQueryClient();
@@ -195,8 +202,13 @@ export default function Reports() {
     setMergeQuestionId(null);
     setReportMergeModalOpen(false);
     setEditingReportMerge(null);
+    setQuestionMergeModalOpen(false);
+    setQuestionMergeInitialId(null);
+    setEditingQuestionMerge(null);
     reportMergeMutation.reset();
     reportMergeDeleteMutation.reset();
+    questionMergeMutation.reset();
+    questionMergeDeleteMutation.reset();
   }, [selectedSurveyId]);
 
   const { data: submissions, isLoading: isSubmissionsLoading } = useQuery({
@@ -232,6 +244,12 @@ export default function Reports() {
     queryKey: reportMergeQueryKey,
     queryFn: () => reportMergeService.listReportMerges(selectedSurveyId),
     enabled: !!selectedSurveyId && !!user,
+  });
+  const questionMergeQueryKey = ['report-question-merges', user?.id || 'anonymous', selectedSurveyId];
+  const { data: questionMerges = [], error: questionMergeQueryError } = useQuery({
+    queryKey: questionMergeQueryKey,
+    queryFn: () => reportQuestionMergeService.listReportQuestionMerges(selectedSurveyId),
+    enabled: !!selectedSurveyId && !!user && (!isClient || surveys?.some(survey => survey.id === selectedSurveyId)),
   });
   const { data: virtualConfigs = [], isLoading: virtualConfigsLoading } = useQuery({
     queryKey: ['virtual-report-merges', user?.id || 'anonymous'],
@@ -377,9 +395,39 @@ export default function Reports() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: reportMergeQueryKey }),
   });
 
+  const questionMergeMutation = useMutation({
+    mutationFn: ({ name, questionIds }: { name: string; questionIds: string[] }) => {
+      const uniqueIds = [...new Set(questionIds)];
+      if (!isAdmin || !user || !selectedSurveyId) throw new Error("Apenas administradores autenticados podem salvar mesclagens de perguntas.");
+      if (!name.trim() || uniqueIds.length < 2 || uniqueIds.some(id => !isEligibleReportQuestion(selectedSurvey?.schema_dinamico?.questions?.find((question: any) => question.id === id)))) {
+        throw new Error("Informe um nome e selecione pelo menos duas perguntas elegíveis diferentes.");
+      }
+      return editingQuestionMerge
+        ? reportQuestionMergeService.updateReportQuestionMerge(editingQuestionMerge.id, selectedSurveyId, { nome: name.trim(), pergunta_ids: uniqueIds })
+        : reportQuestionMergeService.createReportQuestionMerge({ pesquisa_id: selectedSurveyId, nome: name.trim(), pergunta_ids: uniqueIds, criado_por: user.id });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: questionMergeQueryKey });
+      setQuestionMergeModalOpen(false);
+      setEditingQuestionMerge(null);
+      setQuestionMergeInitialId(null);
+    },
+  });
+  const questionMergeDeleteMutation = useMutation({
+    mutationFn: (id: string) => {
+      if (!isAdmin || !selectedSurveyId) throw new Error("Apenas administradores podem excluir mesclagens de perguntas.");
+      return reportQuestionMergeService.deleteReportQuestionMerge(id, selectedSurveyId);
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: questionMergeQueryKey }),
+  });
+
   const reportMergeCards = useMemo(
     () => reportMerges.map(config => buildReportMergeCard(config, selectedSurvey, validSubmissions || [])),
     [reportMerges, selectedSurvey, validSubmissions],
+  );
+  const reportQuestionMergeCards = useMemo(
+    () => questionMerges.map(config => buildReportQuestionMergeCard(config, selectedSurvey, validSubmissions || [])),
+    [questionMerges, selectedSurvey, validSubmissions],
   );
 
   const handleOpenReportMerge = () => {
@@ -417,8 +465,42 @@ export default function Reports() {
     reportMergeDeleteMutation.mutate(config.id);
   };
 
+  const handleOpenQuestionMerge = (questionId?: string) => {
+    if (!isAdmin) return;
+    questionMergeMutation.reset();
+    questionMergeDeleteMutation.reset();
+    setEditingQuestionMerge(null);
+    setQuestionMergeInitialId(questionId || null);
+    setQuestionMergeModalOpen(true);
+  };
+
+  const handleEditQuestionMerge = (config: ReportQuestionMergeConfig) => {
+    if (!isAdmin) return;
+    questionMergeMutation.reset();
+    questionMergeDeleteMutation.reset();
+    setQuestionMergeInitialId(null);
+    setEditingQuestionMerge(config);
+    setQuestionMergeModalOpen(true);
+  };
+
+  const handleCloseQuestionMerge = () => {
+    if (questionMergeMutation.isPending) return;
+    setQuestionMergeModalOpen(false);
+    setEditingQuestionMerge(null);
+    setQuestionMergeInitialId(null);
+    questionMergeMutation.reset();
+  };
+
+  const handleDeleteQuestionMerge = (config: ReportQuestionMergeConfig) => {
+    if (!isAdmin || !window.confirm(`Excluir a mesclagem “${config.nome}”?`)) return;
+    questionMergeDeleteMutation.reset();
+    questionMergeDeleteMutation.mutate(config.id);
+  };
+
   const handleExportReportMerges = () => {
-    if (selectedSurvey && reportMergeCards.length > 0) generateReportMergesPDF(selectedSurvey, reportMergeCards);
+    if (selectedSurvey && (reportMergeCards.length > 0 || reportQuestionMergeCards.length > 0)) {
+      generateReportMergesPDF(selectedSurvey, reportMergeCards, reportQuestionMergeCards);
+    }
   };
 
   const handleOpenSurveySelection = () => {
@@ -856,7 +938,10 @@ export default function Reports() {
               onEdit={handleEditReportMerge}
               onDelete={handleDeleteReportMerge}
             />
-            <ReportMergeActions isAdmin={isAdmin} canExport={reportMergeCards.length > 0} onCreate={handleOpenReportMerge} onExport={handleExportReportMerges} />
+            <ReportMergeActions isAdmin={isAdmin} canExport={reportMergeCards.length > 0 || reportQuestionMergeCards.length > 0} onCreate={handleOpenReportMerge} onExport={handleExportReportMerges} />
+            {reportQuestionMergeCards.length > 0 && <section className="space-y-5" aria-label="Mesclagens de perguntas"><h2 className="text-2xl font-black text-on-surface">Perguntas mescladas</h2><div className="grid grid-cols-1 gap-5 xl:grid-cols-2">{reportQuestionMergeCards.map(card => <div key={card.config.id}><ReportQuestionMergeCard card={card} isAdmin={isAdmin} onEdit={handleEditQuestionMerge} onDelete={handleDeleteQuestionMerge} /></div>)}</div></section>}
+            {questionMergeQueryError instanceof Error && <p role="alert" className="rounded-2xl bg-rose-50 p-4 text-sm font-bold text-rose-700 dark:bg-rose-950/30 dark:text-rose-300">{questionMergeQueryError.message}</p>}
+            {questionMergeDeleteMutation.error instanceof Error && <p role="alert" className="rounded-2xl bg-rose-50 p-4 text-sm font-bold text-rose-700 dark:bg-rose-950/30 dark:text-rose-300">{questionMergeDeleteMutation.error.message}</p>}
           </>}
 
           {stats && Object.keys(stats.dynamicData).length > 0 && (
@@ -867,13 +952,11 @@ export default function Reports() {
                   <section key={key} className="bg-white dark:bg-slate-900 p-12 rounded-[3.5rem] border border-outline shadow-sm space-y-10 animate-in fade-in zoom-in-95 duration-500">
                     <div className="flex items-start justify-between gap-4 border-b border-outline pb-6">
                       <h3 className="text-xl font-black text-on-surface leading-tight">{question?.label || key}</h3>
-                      {isAdmin && question?.type === 'text' ? (
-                        <button type="button" onClick={() => handleOpenMerge(key)} className="inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm font-black text-primary transition hover:bg-primary/10" title="Padronizar respostas" aria-label={`Padronizar respostas de ${question?.label || key}`}>
-                          <GitMerge size={20} />Padronizar respostas
-                        </button>
-                      ) : (
-                        <div className="w-12 h-12 bg-primary/5 rounded-2xl flex items-center justify-center shrink-0 text-primary border border-primary/10"><BarChartIcon size={24} /></div>
-                      )}
+                      <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                        {isAdmin && question?.type === 'text' && <button type="button" onClick={() => handleOpenMerge(key)} className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm font-black text-primary transition hover:bg-primary/10" title="Padronizar respostas" aria-label={`Padronizar respostas de ${question?.label || key}`}><GitMerge size={20} />Padronizar respostas</button>}
+                        {isAdmin && isEligibleReportQuestion(question) && <button type="button" onClick={() => handleOpenQuestionMerge(key)} className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm font-black text-primary transition hover:bg-primary/10" title="Mesclar perguntas" aria-label={`Mesclar perguntas a partir de ${question?.label || key}`}><GitMerge size={20} />Mesclar perguntas</button>}
+                        {!((isAdmin && question?.type === 'text') || (isAdmin && isEligibleReportQuestion(question))) && <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-primary/10 bg-primary/5 text-primary"><BarChartIcon size={24} /></div>}
+                      </div>
                     </div>
                     {renderChart(data, question)}
                   </section>
@@ -911,6 +994,16 @@ export default function Reports() {
         error={reportMergeMutation.error instanceof Error ? reportMergeMutation.error.message : reportMergeMutation.error ? "Não foi possível salvar a mesclagem." : null}
         onClose={handleCloseReportMerge}
         onConfirm={handleConfirmReportMerge}
+      />
+      <ReportQuestionMergeModal
+        isOpen={isAdmin && questionMergeModalOpen}
+        questions={selectedSurvey?.schema_dinamico?.questions || []}
+        initialQuestionId={questionMergeInitialId}
+        existingMerge={editingQuestionMerge}
+        isSubmitting={questionMergeMutation.isPending}
+        error={questionMergeMutation.error instanceof Error ? questionMergeMutation.error.message : questionMergeMutation.error ? "Não foi possível salvar a mesclagem de perguntas." : null}
+        onClose={handleCloseQuestionMerge}
+        onConfirm={(name, questionIds) => questionMergeMutation.mutate({ name, questionIds })}
       />
 
       <VirtualReportJoinModal

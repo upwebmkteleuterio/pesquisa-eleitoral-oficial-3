@@ -171,17 +171,19 @@ export const addTemporalVisualizationPages = (
   displayMode: TemporalDisplayMode,
 ) => {
   const periodChunkSize = 8;
+  const chartOptions = report.chartAnswerOptions || report.answerOptions;
+  const detailOptions = report.detailAnswerOptions || report.answerOptions;
   const chartSubtitle = `Métrica: ${displayMode === 'percentage' ? 'percentual' : 'quantidade'} · Os valores seguem as alternativas visíveis no relatório.`;
   for (let start = 0; start < report.points.length; start += periodChunkSize) {
     const points = report.points.slice(start, start + periodChunkSize);
     doc.addPage();
     drawPageTitle(doc, 'VISUALIZAÇÕES TEMPORAIS · BARRAS AGRUPADAS', chartSubtitle);
-    drawTemporalGroupedBarChart(doc, points, report.answerOptions, displayMode);
+    drawTemporalGroupedBarChart(doc, points, chartOptions, displayMode);
   }
   for (let start = 0; start < report.points.length; start += periodChunkSize) {
     const points = report.points.slice(start, start + periodChunkSize);
     doc.addPage();
     drawPageTitle(doc, 'VISUALIZAÇÕES TEMPORAIS · MAPA DE CALOR', chartSubtitle);
-    drawTemporalHeatmap(doc, points, report.answerOptions, displayMode);
+    drawTemporalHeatmap(doc, points, detailOptions, displayMode);
   }
 };

@@ -6,6 +6,7 @@ import { Submission, Survey, Researcher, DemographicOption, ReportMergeCardData,
 import type { RankedResearcher } from '../hooks/useRankingData';
 import { aggregateQuestionResponses } from './responseNormalization';
 import { addTemporalVisualizationPages } from './temporalPdfCharts';
+import { getTemporalDemographicLabel } from './temporalReportUtils';
 import type { TemporalChartCapture } from './temporalPdfCapture';
 
 export const generateInterviewPDF = async (
@@ -1232,10 +1233,12 @@ export const generateTemporalReportPDF = async (
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.text(`Período: ${periodLabel} · Agrupamento: ${groupingLabel} · Métrica do gráfico: ${metricLabel}`, margin, 47);
-  doc.text(`Respostas válidas analisadas: ${report.totalResponses}`, margin, 54);
+  const isDemographicReport = filters.demographicField !== 'none';
+  if (filters.demographicField !== 'none') doc.text(`Dado demográfico: ${getTemporalDemographicLabel(filters.demographicField)}`, margin, 54);
+  doc.text(`Respostas válidas analisadas: ${report.totalResponses}`, margin, isDemographicReport ? 61 : 54);
 
   if (chartCapture && chartCapture.width > 0 && chartCapture.height > 0) {
-    const chartTop = 62;
+    const chartTop = isDemographicReport ? 69 : 62;
     const chartBottom = pageHeight - 18;
     const maxWidth = pageWidth - margin * 2;
     const maxHeight = chartBottom - chartTop;
@@ -1253,7 +1256,7 @@ export const generateTemporalReportPDF = async (
     Array.isArray(slices) && slices.some(slice => slice.total > 0 || slice.count > 0 || slice.percentage > 0)
   ));
 
-  if (hasRegionalData && regionalOptions.length > 0) {
+  if (!isDemographicReport && hasRegionalData && regionalOptions.length > 0) {
     const surveyIds = Array.from(new Set(Object.values(regionalBreakdowns).flat().map(slice => slice.surveyId)));
     const colorBySurveyId = new Map(surveyIds.map((surveyId, index) => [surveyId, TEMPORAL_REGIONAL_COLORS[index % TEMPORAL_REGIONAL_COLORS.length]]));
     const cardGap = 6;

@@ -242,6 +242,7 @@ export interface VirtualReportCardData {
 export type TemporalGrouping = 'day' | 'week' | 'month';
 export type TemporalDisplayMode = 'count' | 'percentage';
 export type TemporalChartType = 'line' | 'bar';
+export type TemporalDemographicField = 'none' | ReportDemographicField;
 
 export interface TemporalQuestionDefinition {
   id: string;
@@ -291,6 +292,7 @@ export interface TemporalReportFilters {
   grouping: TemporalGrouping;
   displayMode: TemporalDisplayMode;
   chartType: TemporalChartType;
+  demographicField: TemporalDemographicField;
 }
 
 export type TemporalVariationDirection = 'up' | 'down' | 'stable';
@@ -314,10 +316,13 @@ export interface TemporalDataPoint {
   values: Record<string, number>;
   percentages: Record<string, number>;
   variations: Record<string, TemporalVariation>;
+  seriesTotals?: Record<string, number>;
 }
 
 export interface TemporalReportData {
   answerOptions: TemporalAnswerOption[];
+  chartAnswerOptions?: TemporalAnswerOption[];
+  detailAnswerOptions?: TemporalAnswerOption[];
   points: TemporalDataPoint[];
   totalResponses: number;
   regionalBreakdowns?: Record<string, TemporalRegionalSlice[]>;

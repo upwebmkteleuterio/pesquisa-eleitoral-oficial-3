@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FileDown } from 'lucide-react';
 import type { Submission, Survey, SurveyOptionImage, TemporalQuestionDefinition, TemporalReportFilters, TemporalReportSource } from '../../types';
-import { buildCombinedTemporalReport, getTemporalQuestionGroups, getTemporalQuestionGroupOptions } from '../../utils/temporalReportUtils';
+import { buildCombinedDemographicTemporalReport, buildCombinedTemporalReport, getTemporalQuestionGroups, getTemporalQuestionGroupOptions } from '../../utils/temporalReportUtils';
 import { captureTemporalChart } from '../../utils/temporalPdfCapture';
 import { generateTemporalReportPDF } from '../../utils/pdfUtils';
 import { TemporalGroupedBarChart } from './TemporalGroupedBarChart';
@@ -26,7 +26,7 @@ interface Props {
   onSurveyConfirm: () => void;
 }
 
-const initialFilters: TemporalReportFilters = { questionId: '', answerValues: [], startDate: '', endDate: '', grouping: 'day', displayMode: 'percentage', chartType: 'line' };
+const initialFilters: TemporalReportFilters = { questionId: '', answerValues: [], startDate: '', endDate: '', grouping: 'day', displayMode: 'percentage', chartType: 'line', demographicField: 'none' };
 
 export function TemporalReport({ surveys, selectedSurveyIds, pendingSurveyIds, surveySelectorOpen, submissionsBySurvey, optionImages, isLoading, error, onSurveyOpen, onSurveyToggle, onSurveyCancel, onSurveyConfirm }: Props) {
   const [filters, setFilters] = useState<TemporalReportFilters>(initialFilters);
@@ -42,11 +42,14 @@ export function TemporalReport({ surveys, selectedSurveyIds, pendingSurveyIds, s
     return survey ? [{ surveyId: survey.id, surveyName: survey.nome, submissions: submissionsBySurvey[survey.id] || [], question: source.question }] : [];
   }) || [], [selectedSurveys, submissionsBySurvey, selectedQuestion]);
   const report = useMemo(() => selectedQuestion
-    ? buildCombinedTemporalReport(reportSources, selectedQuestion, filters)
+    ? filters.demographicField === 'none'
+      ? buildCombinedTemporalReport(reportSources, selectedQuestion, filters)
+      : buildCombinedDemographicTemporalReport(reportSources, selectedQuestion, filters)
     : { answerOptions: [], points: [], totalResponses: 0 }, [filters, reportSources, selectedQuestion]);
   const chartCaptureRef = useRef<HTMLDivElement>(null);
   const previousQuestionIdRef = useRef('');
   const previousOptionValuesRef = useRef<string[]>([]);
+  const generalAnswerSelectionRef = useRef<{ questionId: string; answerValues: string[] } | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isPreparingReport, setIsPreparingReport] = useState(false);
   const hasInvalidDateRange = Boolean(filters.startDate && filters.endDate && filters.startDate > filters.endDate);
@@ -68,12 +71,14 @@ export function TemporalReport({ surveys, selectedSurveyIds, pendingSurveyIds, s
     if (!questionChanged && !optionsChanged) return;
 
     setFilters(current => {
-      const nextAnswerValues = questionChanged
-        ? optionValues
-        : Array.from(new Set([
-          ...current.answerValues.filter(value => optionValues.includes(value)),
-          ...optionValues.filter(value => !previousOptionValues.includes(value)),
-        ]));
+      const nextAnswerValues = current.demographicField !== 'none'
+        ? [questionChanged ? optionValues[0] : current.answerValues.find(value => optionValues.includes(value)) || optionValues[0]].filter((value): value is string => Boolean(value))
+        : questionChanged
+          ? optionValues
+          : Array.from(new Set([
+            ...current.answerValues.filter(value => optionValues.includes(value)),
+            ...optionValues.filter(value => !previousOptionValues.includes(value)),
+          ]));
       const sameAnswers = current.answerValues.length === nextAnswerValues.length
         && current.answerValues.every((value, index) => value === nextAnswerValues[index]);
       if (current.questionId === nextQuestionId && sameAnswers) return current;
@@ -91,7 +96,22 @@ export function TemporalReport({ surveys, selectedSurveyIds, pendingSurveyIds, s
     if (next.questionId !== filters.questionId) {
       setIsPreparingReport(true);
       const question = questions.find(item => item.id === next.questionId);
-      setFilters({ ...next, answerValues: question ? getTemporalQuestionGroupOptions(question, submissionsBySurvey).map(option => option.value) : [] });
+      const options = question ? getTemporalQuestionGroupOptions(question, submissionsBySurvey).map(option => option.value) : [];
+      setFilters({ ...next, answerValues: next.demographicField === 'none' ? options : options.slice(0, 1) });
+      return;
+    }
+    if (filters.demographicField === 'none' && next.demographicField !== 'none') {
+      generalAnswerSelectionRef.current = { questionId: filters.questionId, answerValues: filters.answerValues };
+    }
+    if (filters.demographicField !== 'none' && next.demographicField === 'none') {
+      const saved = generalAnswerSelectionRef.current;
+      const answerValues = saved?.questionId === next.questionId ? saved.answerValues.filter(value => optionValues.includes(value)) : optionValues;
+      setFilters({ ...next, answerValues });
+      return;
+    }
+    if (next.demographicField !== 'none') {
+      const selectedAnswer = next.answerValues.find(value => filters.answerValues.includes(value)) || next.answerValues[0] || optionValues[0];
+      setFilters({ ...next, answerValues: selectedAnswer ? [selectedAnswer] : [] });
       return;
     }
     setFilters(next);
@@ -117,10 +137,10 @@ export function TemporalReport({ surveys, selectedSurveyIds, pendingSurveyIds, s
     {!isLoading && !isPreparingReport && !error && filters.questionId && !hasInvalidDateRange && (!filters.answerValues.length || !report.points.length) && <div className="rounded-[2rem] border border-dashed border-outline bg-white p-12 text-center font-bold text-on-surface-variant dark:bg-slate-900">Nenhum dado encontrado para os filtros selecionados.</div>}
     {!isLoading && !isPreparingReport && !error && !hasInvalidDateRange && filters.questionId && report.points.length > 0 && report.answerOptions.length > 0 && <>
       <section className="space-y-8 rounded-[2rem] border border-outline bg-white p-6 shadow-sm dark:bg-slate-900" aria-label="Gráfico de evolução no tempo">
-        <div className="relative flex flex-col gap-4 sm:block"><div className="order-first flex items-center justify-end gap-2 sm:absolute sm:right-0 sm:top-0"><span className="rounded-xl bg-primary/10 px-3 py-2 text-xs font-black text-primary">{filters.grouping === 'day' ? 'Por dia' : filters.grouping === 'week' ? 'Por semana' : 'Por mês'}</span><button type="button" onClick={handleExport} disabled={!canExport || isExporting} className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-black text-white transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40" title="Imprimir relatório temporal em PDF"><FileDown size={16} />{isExporting ? 'Gerando...' : 'Imprimir PDF'}</button></div><div className="order-last min-w-0 rounded-2xl bg-white"><div className="sm:pr-56"><h2 className="text-xl font-black text-on-surface">Evolução no tempo</h2><p className="text-sm font-bold text-on-surface-variant">{report.totalResponses.toLocaleString('pt-BR')} respostas válidas no período</p></div><TemporalReportChart points={report.points} answerOptions={report.answerOptions} optionImages={optionImages} questionId={selectedQuestion?.id} displayMode={filters.displayMode} chartType={filters.chartType} /></div><div id="temporal-chart-pdf-export" ref={chartCaptureRef} data-temporal-pdf-export="true" aria-hidden="true" style={{ position: 'fixed', left: '-10000px', top: 0, width: `${exportChartWidth}px`, height: `${exportChartHeight + 56}px`, overflow: 'hidden', backgroundColor: '#ffffff', pointerEvents: 'none' }}><div><h2 className="text-xl font-black text-on-surface">Evolução no tempo</h2><p className="text-sm font-bold text-on-surface-variant">{report.totalResponses.toLocaleString('pt-BR')} respostas válidas no período</p></div><TemporalReportChart points={report.points} answerOptions={report.answerOptions} optionImages={optionImages} questionId={selectedQuestion?.id} displayMode={filters.displayMode} chartType={filters.chartType} fixedDimensions={{ width: exportChartWidth, height: exportChartHeight }} /></div></div>
-        <TemporalGroupedBarChart points={report.points} answerOptions={report.answerOptions} displayMode={filters.displayMode} /><TemporalHeatmap points={report.points} answerOptions={report.answerOptions} displayMode={filters.displayMode} /><TemporalReportTable points={report.points} answerOptions={report.answerOptions} optionImages={optionImages} questionId={selectedQuestion?.id} />
+        <div className="relative flex flex-col gap-4 sm:block"><div className="order-first flex items-center justify-end gap-2 sm:absolute sm:right-0 sm:top-0"><span className="rounded-xl bg-primary/10 px-3 py-2 text-xs font-black text-primary">{filters.grouping === 'day' ? 'Por dia' : filters.grouping === 'week' ? 'Por semana' : 'Por mês'}</span><button type="button" onClick={handleExport} disabled={!canExport || isExporting} className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-black text-white transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40" title="Imprimir relatório temporal em PDF"><FileDown size={16} />{isExporting ? 'Gerando...' : 'Imprimir PDF'}</button></div><div className="order-last min-w-0 rounded-2xl bg-white"><div className="sm:pr-56"><h2 className="text-xl font-black text-on-surface">Evolução no tempo</h2><p className="text-sm font-bold text-on-surface-variant">{report.totalResponses.toLocaleString('pt-BR')} respostas válidas no período</p></div><TemporalReportChart points={report.points} answerOptions={report.chartAnswerOptions || report.answerOptions} optionImages={optionImages} questionId={selectedQuestion?.id} displayMode={filters.displayMode} chartType={filters.chartType} /></div><div id="temporal-chart-pdf-export" ref={chartCaptureRef} data-temporal-pdf-export="true" aria-hidden="true" style={{ position: 'fixed', left: '-10000px', top: 0, width: `${exportChartWidth}px`, height: `${exportChartHeight + 56}px`, overflow: 'hidden', backgroundColor: '#ffffff', pointerEvents: 'none' }}><div><h2 className="text-xl font-black text-on-surface">Evolução no tempo</h2><p className="text-sm font-bold text-on-surface-variant">{report.totalResponses.toLocaleString('pt-BR')} respostas válidas no período</p></div><TemporalReportChart points={report.points} answerOptions={report.chartAnswerOptions || report.answerOptions} optionImages={optionImages} questionId={selectedQuestion?.id} displayMode={filters.displayMode} chartType={filters.chartType} fixedDimensions={{ width: exportChartWidth, height: exportChartHeight }} /></div></div>
+        <TemporalGroupedBarChart points={report.points} answerOptions={report.chartAnswerOptions || report.answerOptions} displayMode={filters.displayMode} /><TemporalHeatmap points={report.points} answerOptions={report.detailAnswerOptions || report.answerOptions} displayMode={filters.displayMode} /><TemporalReportTable points={report.points} answerOptions={report.detailAnswerOptions || report.answerOptions} optionImages={optionImages} questionId={selectedQuestion?.id} />
       </section>
-      {selectedSurveyIds.length > 1 && report.regionalBreakdowns && <TemporalRegionalDonut answerOptions={report.answerOptions} regionalBreakdowns={report.regionalBreakdowns} />}
+      {filters.demographicField === 'none' && selectedSurveyIds.length > 1 && report.regionalBreakdowns && <TemporalRegionalDonut answerOptions={report.answerOptions} regionalBreakdowns={report.regionalBreakdowns} />}
     </>}
   </div>;
 }

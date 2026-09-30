@@ -1,4 +1,5 @@
 import type {
+  ReportDemographicField,
   Submission,
   TemporalAnswerOption,
   TemporalDataPoint,
@@ -9,6 +10,7 @@ import type {
   TemporalReportSource,
 } from '../types';
 import { normalizeSurveyOptionLabel } from './surveyOptionImageUtils';
+import { normalizeNeighborhoodKey } from './reportMergeUtils';
 
 const TIME_ZONE = 'America/Sao_Paulo';
 const OTHERS_VALUE = '__others__';
@@ -197,6 +199,97 @@ const buildTemporalReportFromSources = (sources: TemporalReportSource[], options
     });
   });
   return { answerOptions, points, totalResponses, regionalBreakdowns };
+};
+
+const TEMPORAL_DEMOGRAPHIC_LABELS: Record<ReportDemographicField, string> = {
+  bairro: 'Bairro', sexo: 'Sexo', faixa_etaria: 'Faixa etária', renda: 'Renda',
+  escolaridade: 'Escolaridade', religiao: 'Religião', estado_civil: 'Estado civil',
+};
+const CHART_OTHERS_VALUE = '__temporal_chart_others__';
+const DETAIL_OTHERS_VALUE = '__temporal_detail_others__';
+
+export const getTemporalDemographicLabel = (field: ReportDemographicField) => TEMPORAL_DEMOGRAPHIC_LABELS[field];
+
+const normalizedDemographicValue = (value: unknown, field: ReportDemographicField) => {
+  if (typeof value !== 'string' || !value.trim()) return { key: 'nao informado', label: 'Não informado' };
+  const label = value.trim().replace(/\s+/g, ' ');
+  if (field === 'bairro') return { key: normalizeNeighborhoodKey(label), label };
+  const key = label.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR')
+    .replace(/[_-]+/g, ' ').replace(/\s*([/|])\s*/g, '$1').replace(/\s+/g, ' ').trim();
+  return { key, label };
+};
+
+export const buildCombinedDemographicTemporalReport = (sources: TemporalReportSource[], question: TemporalQuestionGroup, filters: TemporalReportFilters): TemporalReportData => {
+  const field = filters.demographicField as ReportDemographicField;
+  const selectedValues = new Set(filters.answerValues);
+  const categories = new Map<string, { label: string; total: number }>();
+  const periodMap = new Map<string, { period: string; label: string; total: number; values: Record<string, number>; denominators: Record<string, number> }>();
+  let totalResponses = 0;
+  const sourceBySurvey = new Map(sources.map(source => [source.surveyId, source]));
+  const mergedSources = question.sources.flatMap(questionSource => {
+    const source = sourceBySurvey.get(questionSource.surveyId);
+    return source ? [{ ...source, question: questionSource.question }] : [];
+  });
+  const allOptions = getTemporalQuestionGroupOptions(question, Object.fromEntries(sources.map(source => [source.surveyId, source.submissions])));
+
+  mergedSources.forEach(source => source.submissions.forEach(submission => {
+    if (submission.valida !== true) return;
+    const localDate = localDateParts(submission.data_coleta);
+    if (!localDate) return;
+    const date = dayKey(localDate);
+    if ((filters.startDate && date < filters.startDate) || (filters.endDate && date > filters.endDate)) return;
+    const values = canonicalResponseValues(submission.respostas_dinamicas?.[source.question.id], source.question, allOptions);
+    if (!values.length) return;
+    const category = normalizedDemographicValue(field === 'bairro' ? submission.bairro : submission.dados_fixos?.[field], field);
+    if (!categories.has(category.key)) categories.set(category.key, { label: category.label, total: 0 });
+    categories.get(category.key)!.total += 1;
+    const period = periodFor(localDate, filters.grouping);
+    const point = periodMap.get(period.period) || { period: period.period, label: period.label, total: 0, values: {}, denominators: {} };
+    point.total += 1;
+    point.denominators[category.key] = (point.denominators[category.key] || 0) + 1;
+    if (values.some(value => selectedValues.has(value))) point.values[category.key] = (point.values[category.key] || 0) + 1;
+    periodMap.set(period.period, point);
+    totalResponses += 1;
+  }));
+
+  const ranked = Array.from(categories.entries()).map(([key, category]) => ({ key, ...category }))
+    .sort((left, right) => right.total - left.total || left.label.localeCompare(right.label, 'pt-BR'));
+  const categoryOptions = ranked.map((category, index) => ({ key: category.key, value: category.key, label: category.label, color: temporalOptionColor(index) }));
+  const makeViewOptions = (limit: number, othersValue: string): TemporalAnswerOption[] => {
+    const primary = categoryOptions.slice(0, limit).map(({ value, label, color }) => ({ value, label, color }));
+    return categoryOptions.length > limit ? [...primary, { value: othersValue, label: 'Outros', color: OTHERS_COLOR, aggregated: true }] : primary;
+  };
+  const chartAnswerOptions = makeViewOptions(3, CHART_OTHERS_VALUE);
+  const detailAnswerOptions = makeViewOptions(6, DETAIL_OTHERS_VALUE);
+  const allSeries = [...categoryOptions.map(({ value, label, color }) => ({ value, label, color })),
+    ...chartAnswerOptions.filter(option => option.aggregated), ...detailAnswerOptions.filter(option => option.aggregated)];
+  const chartKeys = new Set(chartAnswerOptions.filter(option => !option.aggregated).map(option => option.value));
+  const detailKeys = new Set(detailAnswerOptions.filter(option => !option.aggregated).map(option => option.value));
+  const points: TemporalDataPoint[] = Array.from(periodMap.values()).sort((left, right) => left.period.localeCompare(right.period)).map(raw => {
+    const values: Record<string, number> = {};
+    const seriesTotals: Record<string, number> = {};
+    const addView = (viewOptions: TemporalAnswerOption[], keys: Set<string>) => viewOptions.forEach(option => {
+      const categoryKeys = option.aggregated ? categoryOptions.filter(category => !keys.has(category.key)).map(category => category.key) : [option.value];
+      values[option.value] = categoryKeys.reduce((sum, key) => sum + (raw.values[key] || 0), 0);
+      seriesTotals[option.value] = categoryKeys.reduce((sum, key) => sum + (raw.denominators[key] || 0), 0);
+    });
+    categoryOptions.forEach(category => {
+      values[category.value] = raw.values[category.key] || 0;
+      seriesTotals[category.value] = raw.denominators[category.key] || 0;
+    });
+    addView(chartAnswerOptions, chartKeys);
+    addView(detailAnswerOptions, detailKeys);
+    const percentages = Object.fromEntries(allSeries.map(option => [option.value, seriesTotals[option.value] ? values[option.value] / seriesTotals[option.value] * 100 : 0]));
+    categoryOptions.forEach(category => { percentages[category.value] = seriesTotals[category.value] ? values[category.value] / seriesTotals[category.value] * 100 : 0; });
+    return { period: raw.period, label: raw.label, total: raw.total, values, percentages, seriesTotals, variations: {} };
+  });
+  points.forEach((point, index) => {
+    point.variations = Object.fromEntries(allSeries.map(option => {
+      const value = point.percentages[option.value] - (points[index - 1]?.percentages[option.value] || 0);
+      return [option.value, { value, direction: Math.abs(value) < 0.05 ? 'stable' : value > 0 ? 'up' : 'down' }];
+    }));
+  });
+  return { answerOptions: categoryOptions.map(({ value, label, color }) => ({ value, label, color })), chartAnswerOptions, detailAnswerOptions, points, totalResponses };
 };
 
 export const buildTemporalReport = (submissions: Submission[], question: TemporalQuestionDefinition | undefined, filters: TemporalReportFilters): TemporalReportData => question

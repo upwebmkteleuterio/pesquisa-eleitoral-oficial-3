@@ -101,9 +101,6 @@ export async function exportAiAnalysisPdf(snapshot: AiAnalysisPdfSnapshot) {
     doc.setTextColor(...blue);
     doc.text(text, margin, y);
     y += level === 1 ? 8 : 7;
-    doc.setDrawColor(191, 219, 254);
-    doc.setLineWidth(0.35);
-    doc.line(margin, y - 2, pageWidth - margin, y - 2);
   };
   const addTable = (title: string, head: string[], body: string[][]) => {
     if (title) addSection(title, 2);

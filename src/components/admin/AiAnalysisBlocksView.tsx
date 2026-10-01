@@ -1,13 +1,14 @@
 import { AlertTriangle, Info } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Line, LineChart } from "recharts";
 import type { AiAnalysisBlock } from "../../types";
+import { AiMarkdownContent } from "./AiMarkdownContent";
 
 const chartColors = ["#2563eb", "#0d9488", "#7c3aed", "#ea580c", "#db2777", "#65a30d", "#0891b2", "#9333ea"];
 
 export function AiAnalysisBlocksView({ blocks }: { blocks: AiAnalysisBlock[] }) {
   if (!blocks.length) return <p className="mt-2 rounded-lg bg-slate-50 p-3 text-xs text-on-surface-variant dark:bg-slate-950">Nenhum bloco estruturado disponível para esta resposta.</p>;
   return <div className="mt-3 space-y-3">{blocks.map((block, index) => {
-    if (block.type === "text") return <p key={index} className="whitespace-pre-wrap break-words text-sm text-on-surface">{block.text}</p>;
+    if (block.type === "text") return <div key={index} className="text-sm text-on-surface"><AiMarkdownContent content={block.text} /></div>;
     if (block.type === "metric") return <section key={index} className="rounded-xl border border-outline bg-primary/5 p-3"><p className="text-xs text-on-surface-variant">{block.label}</p><p className="mt-1 text-2xl font-bold text-on-surface">{block.value}</p>{block.detail && <p className="mt-1 text-xs text-on-surface-variant">{block.detail}</p>}</section>;
     if (block.type === "alert") return <section key={index} role="note" className={`flex gap-2 rounded-xl p-3 text-sm ${block.severity === "warning" ? "bg-amber-50 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200" : "bg-sky-50 text-sky-900 dark:bg-sky-950/30 dark:text-sky-200"}`}><span className="shrink-0">{block.severity === "warning" ? <AlertTriangle size={18} /> : <Info size={18} />}</span><div><h4 className="font-bold">{block.title}</h4><p>{block.text}</p></div></section>;
     if (block.type === "table") return <section key={index} className="overflow-x-auto rounded-xl border border-outline"><h4 className="px-3 pt-3 font-bold text-on-surface">{block.title}</h4>{block.rows.length ? <table className="mt-2 w-full text-left text-xs"><thead><tr>{block.columns.map((column, columnIndex) => <th key={columnIndex} scope="col" className="border-b border-outline px-3 py-2 text-on-surface-variant">{column}</th>)}</tr></thead><tbody>{block.rows.map((row, rowIndex) => <tr key={rowIndex} className="odd:bg-slate-50 dark:odd:bg-slate-950">{row.map((cell, cellIndex) => <td key={cellIndex} className="border-b border-outline/60 px-3 py-2 text-on-surface">{cell}</td>)}</tr>)}</tbody></table> : <p className="p-3 text-xs text-on-surface-variant">Não há linhas seguras para exibir.</p>}</section>;

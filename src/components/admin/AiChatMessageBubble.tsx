@@ -4,6 +4,7 @@ import type { AiAnalysisBlock, AiChatMessageRole, AiChatTrace } from "../../type
 import { sanitizeAiAnalysisBlocks } from "../../utils/aiAnalysisBlocks";
 import { AiAnalysisBlocksView } from "./AiAnalysisBlocksView";
 import { AiExecutionTrace } from "./AiExecutionTrace";
+import { AiMarkdownContent } from "./AiMarkdownContent";
 
 interface AiChatMessageBubbleProps {
   role: AiChatMessageRole;
@@ -34,7 +35,7 @@ export function AiChatMessageBubble({ role, content, createdAt, trace, blocks, o
       </div>
       <div className={`min-w-0 max-w-[88%] ${isUser ? "text-right" : ""}`}>
         <div className={`${isUser ? "inline-block max-w-full" : "block w-full"} rounded-2xl px-4 py-3 text-left text-sm leading-relaxed ${isUser ? "rounded-tr-sm bg-primary text-white" : "rounded-tl-sm border border-outline bg-white text-on-surface dark:bg-slate-900"}`}>
-          {hasBlocks ? <AiAnalysisBlocksView blocks={safeBlocks} /> : <p className="whitespace-pre-wrap break-words">{content}</p>}
+          {hasBlocks ? <AiAnalysisBlocksView blocks={safeBlocks} /> : isUser ? <p className="whitespace-pre-wrap break-words">{content}</p> : <AiMarkdownContent content={content} />}
         </div>
         <p className="mt-1 px-1 text-[10px] text-on-surface-variant">{timestamp}</p>
         {hasBlocks && onExport && <div className="mt-2"><button type="button" onClick={exportPdf} disabled={isExporting} aria-label="Exportar análise desta resposta em PDF" className="inline-flex items-center gap-2 rounded-lg border border-outline bg-white px-3 py-2 text-xs font-bold text-on-surface hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-60 dark:bg-slate-900 dark:hover:bg-slate-800">{isExporting ? <LoaderCircle size={16} className="animate-spin" /> : <Download size={16} />}{isExporting ? "Gerando PDF..." : "Exportar PDF"}</button>{exportError && <p role="alert" className="mt-1 text-xs text-rose-700 dark:text-rose-300">Não foi possível gerar o PDF. Tente novamente.</p>}</div>}

@@ -53,6 +53,17 @@ export async function listMessages(conversationId: string): Promise<AiChatMessag
   return (data ?? []) as AiChatMessage[];
 }
 
+export async function deleteConversation(id: string): Promise<void> {
+  const { data, error } = await supabase
+    .from('ai_chat_conversations')
+    .delete()
+    .eq('id', id)
+    .select('id')
+    .single();
+
+  if (error || !data) throw new Error('Não foi possível excluir a conversa.');
+}
+
 export async function sendMessage(message: string, conversationId?: string): Promise<AiChatResponse> {
   const normalizedMessage = message.trim();
   if (!normalizedMessage || normalizedMessage.length > 12_000) {

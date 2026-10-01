@@ -34,12 +34,6 @@ export function AdminSidebar({ isOpen, onClose, isCollapsed, onToggleCollapse, o
       ]
     },
     {
-      title: "INTELIGÊNCIA",
-      items: [
-        { icon: Sparkles, label: "Gerar com IA", path: "/adm/gerar-ia" },
-      ]
-    },
-    {
       title: "ANÁLISE",
       items: [
         { icon: History, label: "Histórico", path: "/adm/historico" },
@@ -50,7 +44,7 @@ export function AdminSidebar({ isOpen, onClose, isCollapsed, onToggleCollapse, o
     }
   ];
   const visibleSections = isClient
-    ? [{ title: "ANÁLISE", items: menuSections[2].items.filter(item => item.path === "/adm/respostas" || item.path === "/adm/relatorios") }]
+    ? [{ title: "ANÁLISE", items: menuSections[1].items.filter(item => item.path === "/adm/respostas" || item.path === "/adm/relatorios") }]
     : menuSections;
 
   return (
@@ -110,6 +104,21 @@ export function AdminSidebar({ isOpen, onClose, isCollapsed, onToggleCollapse, o
             "flex-1 px-4 py-6 space-y-8 custom-scrollbar",
             isCollapsed ? "overflow-hidden" : "overflow-y-auto"
           )}>
+            {!isClient && (
+              <button
+                type="button"
+                onClick={onOpenAssistant}
+                className={cn(
+                  "mb-8 flex w-full cursor-pointer items-center gap-3 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 font-bold text-primary transition-colors hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                  isCollapsed && "justify-center px-0"
+                )}
+                title="Assistente de IA"
+                aria-label="Abrir Assistente de IA"
+              >
+                <Sparkles size={20} className="shrink-0" />
+                {!isCollapsed && <span className="text-sm">Assistente de IA</span>}
+              </button>
+            )}
             {visibleSections.map((section) => (
               <div key={section.title} className="space-y-2">
                 {!isCollapsed && (
@@ -148,21 +157,6 @@ export function AdminSidebar({ isOpen, onClose, isCollapsed, onToggleCollapse, o
                       </Link>
                     );
                   })}
-                  {section.title === "INTELIGÊNCIA" && !isClient && (
-                    <button
-                      type="button"
-                      onClick={onOpenAssistant}
-                      className={cn(
-                        "flex w-full items-center gap-3 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 font-bold text-primary transition-colors hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-                        isCollapsed && "justify-center px-0"
-                      )}
-                      title="Assistente de IA"
-                      aria-label="Abrir Assistente de IA"
-                    >
-                      <Sparkles size={20} className="shrink-0" />
-                      {!isCollapsed && <span className="text-sm">Assistente de IA</span>}
-                    </button>
-                  )}
                 </div>
               </div>
             ))}

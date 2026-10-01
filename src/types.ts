@@ -327,3 +327,50 @@ export interface TemporalReportData {
   totalResponses: number;
   regionalBreakdowns?: Record<string, TemporalRegionalSlice[]>;
 }
+
+export type AiChatMessageRole = 'user' | 'assistant';
+export type AiChatTraceStatus = 'completed' | 'failed' | 'skipped';
+
+export interface AiChatConversation {
+  id: string;
+  user_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AiChatMessage {
+  id: string;
+  conversation_id: string;
+  user_id: string;
+  role: AiChatMessageRole;
+  content: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface AiChatTraceStep {
+  step: string;
+  status: AiChatTraceStatus;
+  durationMs: number;
+  toolNames?: string[];
+}
+
+export interface AiChatTrace {
+  steps: AiChatTraceStep[];
+  totalDurationMs: number;
+}
+
+export interface AiChatUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+}
+
+export interface AiChatResponse {
+  conversationId: string;
+  message: string;
+  messageId: string;
+  trace: AiChatTrace;
+  usage?: AiChatUsage;
+}

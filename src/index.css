@@ -1,8 +1,56 @@
 @import "tailwindcss";
 
+@keyframes ai-loader-circle {
+  0% {
+    transform: rotate(90deg);
+    box-shadow:
+      0 6px 12px 0 #34d399 inset,
+      0 12px 18px 0 #059669 inset,
+      0 36px 36px 0 #047857 inset,
+      0 0 3px 1.2px rgba(52, 211, 153, 0.3),
+      0 0 6px 1.8px rgba(5, 150, 105, 0.2);
+  }
+  50% {
+    transform: rotate(270deg);
+    box-shadow:
+      0 6px 12px 0 #6ee7b7 inset,
+      0 12px 6px 0 #10b981 inset,
+      0 24px 36px 0 #059669 inset,
+      0 0 3px 1.2px rgba(110, 231, 183, 0.3),
+      0 0 6px 1.8px rgba(5, 150, 105, 0.2);
+  }
+  100% {
+    transform: rotate(450deg);
+    box-shadow:
+      0 6px 12px 0 #52dfaa inset,
+      0 12px 18px 0 #059669 inset,
+      0 36px 36px 0 #047857 inset,
+      0 0 3px 1.2px rgba(82, 223, 170, 0.3),
+      0 0 6px 1.8px rgba(5, 150, 105, 0.2);
+  }
+}
+
+@keyframes ai-loader-letter {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: translateY(0);
+  }
+  20% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  40% {
+    opacity: 0.7;
+    transform: translateY(0);
+  }
+}
+
 @theme {
   /* System Fonts */
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --animate-ai-loader-circle: ai-loader-circle 5s linear infinite;
+  --animate-ai-loader-letter: ai-loader-letter 3s infinite;
   
   /* Brand Colors - Centralized Tokens */
   --color-primary: #059669;

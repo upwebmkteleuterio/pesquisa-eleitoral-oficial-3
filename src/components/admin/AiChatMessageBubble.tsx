@@ -1,5 +1,8 @@
-import { Bot, UserRound } from "lucide-react";
-import type { AiChatMessageRole, AiChatTrace } from "../../types";
+import { useState } from "react";
+import { Bot, Download, LoaderCircle, UserRound } from "lucide-react";
+import type { AiAnalysisBlock, AiChatMessageRole, AiChatTrace } from "../../types";
+import { sanitizeAiAnalysisBlocks } from "../../utils/aiAnalysisBlocks";
+import { AiAnalysisBlocksView } from "./AiAnalysisBlocksView";
 import { AiExecutionTrace } from "./AiExecutionTrace";
 
 interface AiChatMessageBubbleProps {
@@ -7,11 +10,22 @@ interface AiChatMessageBubbleProps {
   content: string;
   createdAt: string;
   trace?: AiChatTrace;
+  blocks?: AiAnalysisBlock[];
+  onExport?: () => void;
 }
 
-export function AiChatMessageBubble({ role, content, createdAt, trace }: AiChatMessageBubbleProps) {
+export function AiChatMessageBubble({ role, content, createdAt, trace, blocks, onExport }: AiChatMessageBubbleProps) {
+  const [isExporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState(false);
   const isUser = role === "user";
   const timestamp = new Date(createdAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+  const safeBlocks = role === "assistant" ? sanitizeAiAnalysisBlocks(blocks) : [];
+  const hasBlocks = safeBlocks.length > 0;
+  const exportPdf = async () => {
+    if (!onExport || isExporting) return;
+    setExporting(true); setExportError(false);
+    try { await onExport(); } catch { setExportError(true); } finally { setExporting(false); }
+  };
 
   return (
     <article className={`flex gap-2.5 ${isUser ? "flex-row-reverse" : ""}`}>
@@ -19,10 +33,11 @@ export function AiChatMessageBubble({ role, content, createdAt, trace }: AiChatM
         {isUser ? <UserRound size={16} /> : <Bot size={16} />}
       </div>
       <div className={`min-w-0 max-w-[88%] ${isUser ? "text-right" : ""}`}>
-        <div className={`inline-block rounded-2xl px-4 py-3 text-left text-sm leading-relaxed ${isUser ? "rounded-tr-sm bg-primary text-white" : "rounded-tl-sm border border-outline bg-white text-on-surface dark:bg-slate-900"}`}>
-          <p className="whitespace-pre-wrap break-words">{content}</p>
+        <div className={`${isUser ? "inline-block max-w-full" : "block w-full"} rounded-2xl px-4 py-3 text-left text-sm leading-relaxed ${isUser ? "rounded-tr-sm bg-primary text-white" : "rounded-tl-sm border border-outline bg-white text-on-surface dark:bg-slate-900"}`}>
+          {hasBlocks ? <AiAnalysisBlocksView blocks={safeBlocks} /> : <p className="whitespace-pre-wrap break-words">{content}</p>}
         </div>
         <p className="mt-1 px-1 text-[10px] text-on-surface-variant">{timestamp}</p>
+        {hasBlocks && onExport && <div className="mt-2"><button type="button" onClick={exportPdf} disabled={isExporting} aria-label="Exportar análise desta resposta em PDF" className="inline-flex items-center gap-2 rounded-lg border border-outline bg-white px-3 py-2 text-xs font-bold text-on-surface hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-60 dark:bg-slate-900 dark:hover:bg-slate-800">{isExporting ? <LoaderCircle size={16} className="animate-spin" /> : <Download size={16} />}{isExporting ? "Gerando PDF..." : "Exportar PDF"}</button>{exportError && <p role="alert" className="mt-1 text-xs text-rose-700 dark:text-rose-300">Não foi possível gerar o PDF. Tente novamente.</p>}</div>}
         {trace && <AiExecutionTrace trace={trace} />}
       </div>
     </article>

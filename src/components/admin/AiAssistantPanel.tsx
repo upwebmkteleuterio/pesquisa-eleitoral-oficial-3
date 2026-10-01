@@ -4,6 +4,8 @@ import { AlertCircle, Bot, LoaderCircle, Plus, Send, X } from "lucide-react";
 import { motion } from "motion/react";
 import { createConversation, listConversations, listMessages, sendMessage } from "../../services/aiChatService";
 import type { AiChatMessage, AiChatTrace } from "../../types";
+import { sanitizeAiAnalysisBlocks } from "../../utils/aiAnalysisBlocks";
+import { exportAiAnalysisPdf } from "../../utils/aiPdfUtils";
 import { AiChatMessageBubble } from "./AiChatMessageBubble";
 
 interface AiAssistantPanelProps {
@@ -140,11 +142,20 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
           )}
           {conversationId && messages.isLoading && <div className="flex justify-center py-8"><LoaderCircle size={20} className="animate-spin text-primary" aria-label="Carregando mensagens" /></div>}
           {messages.isError && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-950/30 dark:text-rose-300">{messages.error instanceof Error ? messages.error.message : "Não foi possível carregar as mensagens."}</p>}
-          {!messages.isLoading && visibleMessages.map((message) => (
-            <div key={message.id}>
-              <AiChatMessageBubble role={message.role} content={message.content} createdAt={message.created_at} trace={traceMessages[message.id] ?? getStoredTrace(message.metadata)} />
-            </div>
-          ))}
+          {!messages.isLoading && visibleMessages.map((message, index) => {
+            const blocks = sanitizeAiAnalysisBlocks(message.blocks ?? message.metadata?.blocks);
+            const previousQuestion = [...visibleMessages.slice(0, index)].reverse().find((item) => item.role === "user")?.content;
+            return <div key={message.id}>
+              <AiChatMessageBubble
+                role={message.role}
+                content={message.content}
+                createdAt={message.created_at}
+                trace={traceMessages[message.id] ?? getStoredTrace(message.metadata)}
+                blocks={blocks}
+                onExport={message.role === "assistant" && blocks.length ? () => exportAiAnalysisPdf({ messageId: message.id, question: previousQuestion, content: message.content, blocks }) : undefined}
+              />
+            </div>;
+          })}
           {sendMutation.isPending && <div className="flex items-center gap-2 text-xs text-on-surface-variant"><LoaderCircle size={16} className="animate-spin text-primary" /> Processando sua mensagem...</div>}
         </div>
 

@@ -497,6 +497,77 @@ async function executeToolCall(call: ToolCall, toolRegistry: Record<string, Tool
   }
 }
 
+function safeBlockText(value: unknown, max = 240): string {
+  if (typeof value !== 'string') return ''
+  return value.slice(0, max)
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[dado removido]')
+    .replace(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/g, '[dado removido]')
+    .replace(/\b(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?9?\d{4}[-.\s]?\d{4}\b/g, '[dado removido]')
+}
+
+function deriveAnalysisBlocks(toolResults: Array<{ name: string; value: unknown }>, finalText: string) {
+  const blocks: Array<Record<string, unknown>> = [{ type: 'text', text: safeBlockText(finalText, 6000) }]
+  for (const item of toolResults) {
+    if (!item.value || typeof item.value !== 'object' || Array.isArray(item.value)) continue
+    const result = item.value as Record<string, unknown>
+    if (item.name === 'summarize_responses') {
+      if (typeof result.survey === 'object' && result.survey && typeof result.question === 'object' && result.question) {
+        const survey = result.survey as Record<string, unknown>
+        const question = result.question as Record<string, unknown>
+        const filterText = [survey.nome, question.label].filter((value): value is string => typeof value === 'string' && value.trim()).join(' — ')
+        if (filterText) blocks.push({ type: 'alert', severity: 'info', title: 'Filtros utilizados', text: safeBlockText(filterText, 360) })
+      }
+      if (typeof result.total_responses === 'number') blocks.push({ type: 'metric', label: 'Respostas analisadas', value: String(result.total_responses), detail: typeof result.sample_size === 'number' ? `Amostra carregada: ${result.sample_size}` : undefined })
+      const answers = Array.isArray(result.answers) ? result.answers.filter((answer): answer is Record<string, unknown> => Boolean(answer) && typeof answer === 'object' && !Array.isArray(answer)) : []
+      const safeAnswers = answers.filter((answer) => typeof answer.count === 'number' && answer.count >= 0 && typeof answer.percentage === 'number' && typeof answer.answer === 'string')
+      if (safeAnswers.length) {
+        const rows = safeAnswers.slice(0, 20).map((answer) => [safeBlockText(answer.answer, 120), String(answer.count), `${answer.percentage}%`])
+        blocks.push({ type: 'table', title: 'Resumo das respostas', columns: ['Alternativa', 'Respostas', 'Percentual'], rows })
+        const chartData = safeAnswers.slice(0, 12).map((answer) => ({ label: safeBlockText(answer.answer, 80), value: answer.count as number }))
+        blocks.push({ type: 'bar_chart', title: 'Distribuição das respostas', data: chartData })
+        blocks.push({ type: 'pie_chart', title: 'Proporção das respostas', data: chartData })
+      }
+    }
+    if (item.name === 'analyze_cross_tabulation') {
+      if (typeof result.survey === 'object' && result.survey && typeof result.question === 'object' && result.question) {
+        const survey = result.survey as Record<string, unknown>
+        const question = result.question as Record<string, unknown>
+        const dimensions = Array.isArray(result.dimensions) ? result.dimensions.filter((value): value is string => typeof value === 'string').join(', ') : ''
+        const filterText = [survey.nome, question.label, dimensions ? `Dimensões: ${dimensions}` : '', typeof result.answer === 'string' ? `Alternativa: ${result.answer}` : ''].filter(Boolean).join(' — ')
+        if (filterText) blocks.push({ type: 'alert', severity: 'info', title: 'Filtros utilizados', text: safeBlockText(filterText, 520) })
+      }
+      const groups = Array.isArray(result.groups) ? result.groups.filter((group): group is Record<string, unknown> => Boolean(group) && typeof group === 'object' && !Array.isArray(group)) : []
+      const safeGroups = groups.filter((group) => typeof group.total_responses === 'number' && group.total_responses >= 0 && typeof group.metric_value === 'number' && group.dimensions && typeof group.dimensions === 'object')
+      if (safeGroups.length) {
+        const metric = safeBlockText(result.metric_description, 240) || safeBlockText(result.metric, 60)
+        const comparable = safeGroups.slice(0, 20).map((group) => ({
+          label: Object.values(group.dimensions as Record<string, unknown>).map((value) => safeBlockText(value, 80)).filter(Boolean).join(' · ').slice(0, 180),
+          value: group.metric_value as number,
+          total: group.total_responses as number,
+        }))
+        blocks.push({ type: 'comparative_summary', title: 'Resumo comparativo', metric, groups: comparable })
+        blocks.push({ type: 'table', title: 'Comparação entre grupos', columns: ['Grupo', 'Métrica', 'Respostas'], rows: comparable.map((group) => [group.label, String(group.value), String(group.total)]) })
+        blocks.push({ type: 'bar_chart', title: 'Comparação por grupo', data: comparable.slice(0, 12).map((group) => ({ label: group.label, value: group.value })) })
+        if (result.metric === 'growth') {
+          const first = safeGroups[0]
+          if (typeof first.start_percentage === 'number' && typeof first.end_percentage === 'number' && typeof first.start_period === 'string' && typeof first.end_period === 'string') {
+            blocks.push({ type: 'line_chart', title: 'Variação entre períodos', data: [{ label: safeBlockText(first.start_period, 20), value: first.start_percentage }, { label: safeBlockText(first.end_period, 20), value: first.end_percentage }] })
+          }
+        }
+      }
+    }
+    const smallSample = (typeof result.total_responses === 'number' && result.total_responses < 10) ||
+      (Array.isArray(result.answers) && result.answers.some((answer) => Boolean(answer) && typeof answer === 'object' && typeof (answer as Record<string, unknown>).count === 'number' && ((answer as Record<string, unknown>).count as number) < 10)) ||
+      (Array.isArray(result.groups) && result.groups.some((group) => Boolean(group) && typeof group === 'object' && typeof (group as Record<string, unknown>).total_responses === 'number' && ((group as Record<string, unknown>).total_responses as number) < 10))
+    if (result.unavailable === true || result.truncated === true || typeof result.note === 'string' || smallSample) {
+      const warning = result.unavailable === true || smallSample
+      blocks.push({ type: 'alert', severity: warning ? 'warning' : 'info', title: result.unavailable === true ? 'Análise indisponível' : smallSample ? 'Amostra pequena' : result.truncated === true ? 'Dados truncados' : 'Observação da análise', text: safeBlockText(result.reason ?? (smallSample ? 'Há grupos ou alternativas com menos de 10 respostas; evite interpretar o resultado como uma conclusão estatística.' : result.note) ?? 'Parte dos dados foi limitada por segurança.', 400) })
+    }
+  }
+  if (JSON.stringify(blocks).length > 14_000) return [blocks[0]]
+  return blocks.slice(0, 12)
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
   if (req.method !== 'POST') return json({ error: 'Método não permitido' }, 405)
@@ -643,6 +714,7 @@ serve(async (req) => {
 
     const modelMessages: ModelMessage[] = [{ role: 'system', content: systemPrompt }, ...history]
     const turnModelMessages: ModelMessage[] = []
+    const toolResults: Array<{ name: string; value: unknown }> = []
     let finalText: string | null = null
     let usage: ModelResponse['usage']
     let cycle = 0
@@ -682,17 +754,21 @@ serve(async (req) => {
       modelMessages.push(assistantModelMessage)
       turnModelMessages.push(assistantModelMessage)
       for (const call of toolCalls) {
-        const toolMessage: ModelMessage = {
-          role: 'tool',
-          tool_call_id: call.id,
-          content: await executeToolCall(call, toolset.handlers),
+        const content = await executeToolCall(call, toolset.handlers)
+        try {
+          toolResults.push({ name: call.function.name, value: JSON.parse(content) })
+        } catch {
+          // Ignore malformed tool output for rendering; the model still receives its original response.
         }
+        const toolMessage: ModelMessage = { role: 'tool', tool_call_id: call.id, content }
         modelMessages.push(toolMessage)
         turnModelMessages.push(toolMessage)
       }
       trace.push({ step: 'tool_calls', status: 'completed', durationMs: elapsed(toolStarted), toolNames: safeToolNames })
     }
     if (typeof finalText !== 'string' || !finalText.trim()) throw new RequestError(502, 'O serviço de IA retornou uma resposta vazia')
+    finalText = safeBlockText(finalText, 12_000)
+    const blocks = deriveAnalysisBlocks(toolResults, finalText)
 
     const assistantMessageStarted = performance.now()
     const assistantMessageId = crypto.randomUUID()
@@ -704,7 +780,7 @@ serve(async (req) => {
         user_id: user.id,
         role: 'assistant',
         content: finalText,
-        metadata: { trace: { steps: trace }, ...(usage ? { usage } : {}) },
+        metadata: { trace: { steps: trace }, blocks, ...(usage ? { usage } : {}) },
       })
       .select('id')
       .single()
@@ -726,6 +802,7 @@ serve(async (req) => {
       conversationId,
       message: finalText,
       messageId: savedMessage.id,
+      blocks,
       trace: { steps: trace, totalDurationMs: elapsed(requestStarted) },
       ...(usage ? { usage } : {}),
     })

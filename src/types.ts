@@ -331,6 +331,14 @@ export interface TemporalReportData {
 export type AiChatMessageRole = 'user' | 'assistant';
 export type AiChatTraceStatus = 'completed' | 'failed' | 'skipped';
 
+export type AiAnalysisBlock =
+  | { type: 'text'; text: string }
+  | { type: 'metric'; label: string; value: string; detail?: string }
+  | { type: 'table'; title: string; columns: string[]; rows: string[][] }
+  | { type: 'alert'; severity: 'info' | 'warning'; title: string; text: string }
+  | { type: 'bar_chart' | 'pie_chart' | 'line_chart'; title: string; data: Array<{ label: string; value: number }> }
+  | { type: 'comparative_summary'; title: string; metric: string; groups: Array<{ label: string; value: number; total: number }> };
+
 export interface AiChatConversation {
   id: string;
   user_id: string;
@@ -346,6 +354,7 @@ export interface AiChatMessage {
   role: AiChatMessageRole;
   content: string;
   metadata: Record<string, unknown>;
+  blocks?: AiAnalysisBlock[];
   created_at: string;
 }
 
@@ -372,5 +381,6 @@ export interface AiChatResponse {
   message: string;
   messageId: string;
   trace: AiChatTrace;
+  blocks?: AiAnalysisBlock[];
   usage?: AiChatUsage;
 }

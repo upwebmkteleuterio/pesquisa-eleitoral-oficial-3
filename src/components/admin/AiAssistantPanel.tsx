@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, Bot, History, LoaderCircle, Plus, Send, X } from "lucide-react";
+import { AlertCircle, History, LoaderCircle, Plus, Send, X } from "lucide-react";
 import { motion } from "motion/react";
 import { createConversation, deleteConversation, listConversations, listMessages, sendMessage } from "../../services/aiChatService";
+import { AiLoader } from "../ui/ai-loader";
 import type { AiChatConversation, AiChatMessage, AiChatTrace } from "../../types";
 import { sanitizeAiAnalysisBlocks } from "../../utils/aiAnalysisBlocks";
 import { exportAiAnalysisPdf } from "../../utils/aiPdfUtils";
@@ -111,19 +112,19 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
       <button type="button" aria-label="Fechar Assistente de IA" onClick={onClose} className="fixed inset-0 z-40 bg-slate-950/60 lg:hidden" />
       <motion.aside initial={{ x: -24, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ duration: 0.2 }} className="fixed inset-0 z-50 flex h-dvh w-full flex-col border-r border-outline bg-slate-50 shadow-2xl dark:bg-slate-950 lg:inset-auto lg:sticky lg:top-0 lg:h-screen lg:w-[440px] lg:shrink-0" aria-label="Assistente de IA">
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-outline bg-white px-4 py-4 dark:bg-slate-900">
-          <div className="flex min-w-0 items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Bot size={22} /></span><div className="min-w-0"><h2 className="font-bold text-on-surface">Assistente de IA</h2><p className="text-xs text-on-surface-variant">Converse com seus dados de forma inteligente</p></div></div>
+          <div className="flex min-w-0 items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><AiLoader size={24} /></span><div className="min-w-0"><h2 className="font-bold text-on-surface">Assistente de IA</h2><p className="text-xs text-on-surface-variant">Converse com seus dados de forma inteligente</p></div></div>
           <button type="button" onClick={onClose} aria-label="Fechar Assistente de IA" title="Fechar" className="rounded-lg p-2 text-on-surface-variant hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:hover:bg-slate-800"><X size={20} /></button>
         </header>
 
         <div className="flex shrink-0 items-center gap-2 border-b border-outline px-4 py-3">
-          <button type="button" onClick={() => setHistoryOpen(true)} className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-outline bg-white px-3 py-2 text-left text-xs font-semibold text-on-surface hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:bg-slate-900 dark:hover:bg-slate-800"><History size={16} className="shrink-0 text-primary" /><span className="truncate">Histórico{selectedConversation ? ` · ${selectedConversation.title}` : ""}</span></button>
+          <button type="button" onClick={() => setHistoryOpen(true)} className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-lg border border-outline bg-white px-3 py-2 text-left text-xs font-semibold text-on-surface hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:bg-slate-900 dark:hover:bg-slate-800"><History size={16} className="shrink-0 text-primary" /><span className="truncate">Histórico{selectedConversation ? ` · ${selectedConversation.title}` : ""}</span></button>
           <button type="button" onClick={() => createMutation.mutate()} disabled={createMutation.isPending || sendMutation.isPending} className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-bold text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50">{createMutation.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <Plus size={16} />} Nova</button>
         </div>
 
         <div ref={listRef} className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-5" aria-live="polite">
           {conversations.isLoading && !conversationId && <div className="flex items-center justify-center gap-2 py-8 text-sm text-on-surface-variant"><LoaderCircle size={18} className="animate-spin" /> Carregando histórico...</div>}
           {conversations.isError && !conversationId && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-950/30 dark:text-rose-300">{conversations.error instanceof Error ? conversations.error.message : "Não foi possível carregar o histórico."}</p>}
-          {!conversationId && !conversations.isLoading && !conversations.isError && <div className="mx-auto mt-10 max-w-xs text-center"><span className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary"><Bot size={26} /></span><h3 className="font-bold text-on-surface">Olá! Como posso ajudar?</h3><p className="mt-2 text-sm text-on-surface-variant">Envie uma mensagem para começar uma conversa com o assistente.</p></div>}
+          {!conversationId && !conversations.isLoading && !conversations.isError && <div className="mx-auto mt-10 max-w-xs text-center"><span className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary"><AiLoader size={28} /></span><h3 className="font-bold text-on-surface">Olá! Como posso ajudar?</h3><p className="mt-2 text-sm text-on-surface-variant">Envie uma mensagem para começar uma conversa com o assistente.</p></div>}
           {conversationId && messages.isLoading && <div className="flex justify-center py-8"><LoaderCircle size={20} className="animate-spin text-primary" aria-label="Carregando mensagens" /></div>}
           {messages.isError && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-950/30 dark:text-rose-300">{messages.error instanceof Error ? messages.error.message : "Não foi possível carregar as mensagens."}</p>}
           {!messages.isLoading && visibleMessages.map((message, index) => {

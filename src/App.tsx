@@ -26,7 +26,6 @@ import Reports from "./pages/admin/Reports";
 import SubmissionsList from "./pages/admin/SubmissionsList";
 import Ranking from "./pages/admin/Ranking";
 import History from "./pages/admin/History";
-import AiFormGenerator from "./pages/admin/AiFormGenerator";
 import Login from "./pages/Login";
 import PublicForm from "./pages/PublicForm";
 import PublicSuccessPage from "./pages/PublicSuccessPage";
@@ -121,7 +120,6 @@ function AppRoutes() {
           <Route path="ranking" element={<Ranking />} />
           <Route path="historico" element={<History />} />
           <Route path="relatorios" element={<Reports />} />
-          <Route path="gerar-ia" element={<AiFormGenerator />} />
         </Route>
       ) : (
         <Route path="/adm/*" element={<Navigate to="/" replace />} />

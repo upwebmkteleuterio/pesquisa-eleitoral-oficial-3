@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Bot, CalendarDays, LoaderCircle, Trash2, X } from "lucide-react";
+import { ArrowLeft, CalendarDays, LoaderCircle, Trash2 } from "lucide-react";
 import type { AiChatConversation } from "../../types";
+import { AiLoader } from "../ui/ai-loader";
 
 interface AiChatHistoryPanelProps {
   conversations: AiChatConversation[];
@@ -18,17 +19,17 @@ export function AiChatHistoryPanel({ conversations, selectedId, isLoading, isDel
   return (
     <section role="dialog" aria-modal="true" aria-labelledby="ai-chat-history-title" className="absolute inset-0 z-20 flex flex-col bg-slate-50 dark:bg-slate-950">
       <header className="flex shrink-0 items-center justify-between border-b border-outline bg-white px-4 py-4 dark:bg-slate-900">
-        <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><Bot size={22} /></span><div><h2 id="ai-chat-history-title" className="font-bold text-on-surface">Assistente de IA</h2><p className="text-xs text-on-surface-variant">Histórico das suas conversas</p></div></div>
-        <button type="button" onClick={onClose} aria-label="Fechar histórico" className="rounded-lg p-2 text-on-surface-variant hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:hover:bg-slate-800"><X size={20} /></button>
+        <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><AiLoader size={24} /></span><div><h2 id="ai-chat-history-title" className="font-bold text-on-surface">Assistente de IA</h2><p className="text-xs text-on-surface-variant">Histórico das suas conversas</p></div></div>
+        <button type="button" onClick={onClose} aria-label="Voltar ao chat" title="Voltar ao chat" className="cursor-pointer rounded-lg p-2 text-on-surface-variant hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:hover:bg-slate-800"><ArrowLeft size={20} /></button>
       </header>
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
         {isLoading && <div className="flex justify-center py-8"><LoaderCircle size={20} className="animate-spin text-primary" aria-label="Carregando histórico" /></div>}
         {error && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-950/30 dark:text-rose-300">{error}</p>}
-        {!isLoading && !conversations.length && <p className="py-8 text-center text-sm text-on-surface-variant">Ainda não há conversas.</p>}
+        {!isLoading && !conversations.length && <div className="flex flex-col items-center gap-3 py-8 text-center text-sm text-on-surface-variant"><AiLoader size={28} /><p>Ainda não há conversas.</p></div>}
         {conversations.map((conversation) => (
           <div key={conversation.id} className={`group rounded-xl border p-2 transition-colors ${selectedId === conversation.id ? "border-primary/40 bg-primary/5" : "border-outline bg-white dark:bg-slate-900"}`}>
             <div className="flex items-start gap-2">
-              <button type="button" onClick={() => onSelect(conversation.id)} disabled={isDeleting} className="min-w-0 flex-1 rounded-lg px-2 py-2 text-left hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:hover:bg-slate-800 disabled:opacity-50">
+              <button type="button" onClick={() => onSelect(conversation.id)} disabled={isDeleting} className="min-w-0 flex-1 cursor-pointer rounded-lg px-2 py-2 text-left hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:hover:bg-slate-800 disabled:opacity-50">
                 <span className="block truncate text-sm font-semibold text-on-surface">{conversation.title}</span>
                 <span className="mt-1 flex items-center gap-1.5 text-[11px] text-on-surface-variant"><CalendarDays size={13} />{new Date(conversation.updated_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</span>
               </button>

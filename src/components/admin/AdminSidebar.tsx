@@ -1,8 +1,9 @@
-import { Users, FileText, Map, Settings, PieChart, Database, Trophy, X, Sparkles, ChevronLeft, ChevronRight, History, LogOut } from "lucide-react";
+import { Users, FileText, Map, Settings, PieChart, Database, Trophy, X, ChevronLeft, ChevronRight, History, LogOut } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "../../lib/utils";
 import { motion } from "motion/react";
 import { useAuth } from "../../contexts/AuthContext";
+import { AiLoader } from "../ui/ai-loader";
 
 interface AdminSidebarProps {
   isOpen: boolean;
@@ -115,7 +116,7 @@ export function AdminSidebar({ isOpen, onClose, isCollapsed, onToggleCollapse, o
                 title="Assistente de IA"
                 aria-label="Abrir Assistente de IA"
               >
-                <Sparkles size={20} className="shrink-0" />
+                <AiLoader size={20} />
                 {!isCollapsed && <span className="text-sm">Assistente de IA</span>}
               </button>
             )}

@@ -9,9 +9,10 @@ interface AdminSidebarProps {
   onClose: () => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  onOpenAssistant: () => void;
 }
 
-export function AdminSidebar({ isOpen, onClose, isCollapsed, onToggleCollapse }: AdminSidebarProps) {
+export function AdminSidebar({ isOpen, onClose, isCollapsed, onToggleCollapse, onOpenAssistant }: AdminSidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { profile, signOut } = useAuth();
@@ -126,8 +127,8 @@ export function AdminSidebar({ isOpen, onClose, isCollapsed, onToggleCollapse }:
                         onClick={() => window.innerWidth < 1024 && onClose()}
                         className={cn(
                           "flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all relative group",
-                          isActive 
-                            ? "bg-primary text-white shadow-lg shadow-primary/20" 
+                          isActive
+                            ? "bg-primary text-white shadow-lg shadow-primary/20"
                             : "text-slate-400 hover:bg-slate-800 hover:text-white",
                           isCollapsed && "justify-center px-0"
                         )}
@@ -139,8 +140,6 @@ export function AdminSidebar({ isOpen, onClose, isCollapsed, onToggleCollapse }:
                             {item.label}
                           </span>
                         )}
-                        
-                        {/* Tooltip for collapsed state */}
                         {isCollapsed && (
                           <div className="absolute left-full ml-4 px-2 py-1 bg-slate-800 text-white text-[10px] rounded opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50 border border-slate-700 pointer-events-none">
                             {item.label}
@@ -149,6 +148,21 @@ export function AdminSidebar({ isOpen, onClose, isCollapsed, onToggleCollapse }:
                       </Link>
                     );
                   })}
+                  {section.title === "INTELIGÊNCIA" && !isClient && (
+                    <button
+                      type="button"
+                      onClick={onOpenAssistant}
+                      className={cn(
+                        "flex w-full items-center gap-3 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 font-bold text-primary transition-colors hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                        isCollapsed && "justify-center px-0"
+                      )}
+                      title="Assistente de IA"
+                      aria-label="Abrir Assistente de IA"
+                    >
+                      <Sparkles size={20} className="shrink-0" />
+                      {!isCollapsed && <span className="text-sm">Assistente de IA</span>}
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

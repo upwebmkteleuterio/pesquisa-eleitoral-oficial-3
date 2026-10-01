@@ -119,10 +119,16 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
           <button type="button" onClick={onClose} aria-label="Fechar Assistente de IA" title="Fechar" className="rounded-lg p-2 text-on-surface-variant hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:hover:bg-slate-800"><X size={20} /></button>
         </header>
 
-        <div className="flex shrink-0 items-center justify-between border-b border-outline px-4 py-3">
-          <span className="truncate text-xs font-medium text-on-surface-variant">{conversationId ? "Conversa recente" : "Nova conversa"}</span>
-          <button type="button" onClick={() => createMutation.mutate()} disabled={createMutation.isPending || sendMutation.isPending} className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-bold text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50">
-            {createMutation.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <Plus size={16} />} Nova conversa
+        <div className="flex shrink-0 items-center gap-2 border-b border-outline px-4 py-3">
+          <select aria-label="Selecionar conversa anterior" value={conversationId ?? ""}
+            onChange={(event) => { setConversationId(event.target.value || undefined); setLocalMessages([]); setSendError(undefined); }}
+            disabled={sendMutation.isPending}
+            className="min-w-0 flex-1 rounded-lg border border-outline bg-white px-2.5 py-2 text-xs text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 dark:bg-slate-900">
+            <option value="" disabled>{conversations.data?.length ? "Selecione uma conversa" : "Nova conversa"}</option>
+            {(conversations.data ?? []).map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}
+          </select>
+          <button type="button" onClick={() => createMutation.mutate()} disabled={createMutation.isPending || sendMutation.isPending} className="flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-bold text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50">
+            {createMutation.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <Plus size={16} />} Nova
           </button>
         </div>
 

@@ -352,13 +352,11 @@ export const submissionService = {
       valida: submission.valida ?? true,
       origem: isPublicSubmission ? 'web' : origem || 'app',
       referenciado_por,
-      ...(!isPublicSubmission ? {
-        audio_storage_path: audioPath,
-        audio_mime_type: submission.audio?.mime_type,
-        audio_duration_seconds: submission.audio?.duration_seconds,
-        audio_consent_at: submission.audio?.consent_at,
-        audio_consent_state: submission.audio?.consent_state
-      } : {})
+      audio_storage_path: isPublicSubmission ? null : audioPath,
+      audio_mime_type: isPublicSubmission ? null : submission.audio?.mime_type,
+      audio_duration_seconds: isPublicSubmission ? null : submission.audio?.duration_seconds,
+      audio_consent_at: isPublicSubmission ? null : submission.audio?.consent_at,
+      audio_consent_state: isPublicSubmission ? null : submission.audio?.consent_state
     };
 
     reportProgress(onProgress, { stage: 'sending-responses', percentage: 50, label: 'Enviando respostas' });

@@ -35,6 +35,7 @@ export const anonymousSupabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE
     persistSession: false,
     autoRefreshToken: false,
     detectSessionInUrl: false,
+    storageKey: 'electoral-anonymous-auth',
   },
   global: {
     fetch: fetchWithTimeout,

@@ -91,7 +91,8 @@ const getPostgrestErrorMetadata = (error: unknown) => {
 
 const isPermanentHttpError = (error: unknown): boolean => {
   const status = getHttpStatus(error);
-  return status !== undefined && status >= 400 && status < 500;
+  const { code } = getPostgrestErrorMetadata(error);
+  return code === '42501' || (status !== undefined && status >= 400 && status < 500);
 };
 
 const PUBLIC_RLS_PREDICATES = [

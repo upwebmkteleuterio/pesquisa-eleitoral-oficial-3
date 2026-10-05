@@ -16,6 +16,7 @@ interface AiAssistantPanelProps {
 
 interface LocalMessage extends AiChatMessage {
   trace?: AiChatTrace;
+  requestId: string;
 }
 
 function getStoredTrace(metadata: Record<string, unknown>): AiChatTrace | undefined {
@@ -68,7 +69,7 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
     },
   });
   const sendMutation = useMutation({
-    mutationFn: ({ message, id }: { message: string; id?: string }) => sendMessage(message, id),
+    mutationFn: ({ message, id, requestId, allowAutomaticRetry }: { message: string; id?: string; requestId: string; allowAutomaticRetry?: boolean }) => sendMessage(message, id, requestId, allowAutomaticRetry),
     onSuccess: async (response) => {
       setConversationId(response.conversationId);
       const returnedMessages = await queryClient.fetchQuery({ queryKey: ["ai-chat-messages", response.conversationId], queryFn: () => listMessages(response.conversationId) });
@@ -99,12 +100,14 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
   const submitMessage = (message = draft) => {
     const content = message.trim();
     if (!content || sendMutation.isPending) return;
+    const requestId = crypto.randomUUID();
     setSendError(undefined);
     setDraft("");
-    setLocalMessages((current) => [...current, { id: `optimistic-${Date.now()}`, conversation_id: conversationId ?? "", user_id: "", role: "user", content, metadata: {}, created_at: new Date().toISOString() }]);
-    sendMutation.mutate({ message: content, id: conversationId });
+    setLocalMessages((current) => [...current, { id: requestId, requestId, conversation_id: conversationId ?? "", user_id: "", role: "user", content, metadata: {}, created_at: new Date().toISOString() }]);
+    sendMutation.mutate({ message: content, id: conversationId, requestId });
   };
-  const visibleMessages = [...(messages.data ?? []), ...localMessages];
+  const storedMessageIds = new Set((messages.data ?? []).map((message) => message.id));
+  const visibleMessages = [...(messages.data ?? []), ...localMessages.filter((message) => !storedMessageIds.has(message.id))];
   const selectedConversation = (conversations.data ?? []).find((conversation) => conversation.id === conversationId);
 
   return (
@@ -136,7 +139,7 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
         </div>
 
         <div className="shrink-0 border-t border-outline bg-white p-4 shadow-[0_-4px_18px_rgba(15,23,42,0.08)] dark:bg-slate-900">
-          {sendError && <div role="alert" className="mb-3 flex items-start gap-2 rounded-xl bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-950/30 dark:text-rose-300"><AlertCircle size={17} className="mt-0.5 shrink-0" /><p className="min-w-0 flex-1">{sendError}</p><button type="button" onClick={() => { const content = localMessages.at(-1)?.content; if (content) { setSendError(undefined); sendMutation.mutate({ message: content, id: conversationId }); } }} disabled={sendMutation.isPending} className="shrink-0 font-bold underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">Tentar novamente</button></div>}
+          {sendError && <div role="alert" className="mb-3 flex items-start gap-2 rounded-xl bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-950/30 dark:text-rose-300"><AlertCircle size={17} className="mt-0.5 shrink-0" /><p className="min-w-0 flex-1">{sendError}</p><button type="button" onClick={() => { const pendingMessage = localMessages.at(-1); if (pendingMessage) { setSendError(undefined); sendMutation.mutate({ message: pendingMessage.content, id: conversationId, requestId: pendingMessage.requestId, allowAutomaticRetry: false }); } }} disabled={sendMutation.isPending} className="shrink-0 font-bold underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">Tentar novamente</button></div>}
           {createMutation.isError && <p role="alert" className="mb-3 text-sm text-rose-600 dark:text-rose-400">{createMutation.error instanceof Error ? createMutation.error.message : "Não foi possível criar uma conversa."}</p>}
           {deleteMutation.isError && <p role="alert" className="mb-3 text-sm text-rose-600 dark:text-rose-400">{deleteMutation.error instanceof Error ? deleteMutation.error.message : "Não foi possível excluir a conversa."}</p>}
           <form onSubmit={(event) => { event.preventDefault(); submitMessage(); }} className="relative rounded-2xl border border-outline bg-slate-50 p-2 shadow-md transition-shadow focus-within:border-primary/50 focus-within:shadow-lg dark:bg-slate-950">

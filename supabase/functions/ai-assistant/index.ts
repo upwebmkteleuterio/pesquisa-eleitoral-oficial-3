@@ -40,6 +40,7 @@ const json = (body: JsonObject, status = 200) => new Response(JSON.stringify(bod
   headers: { ...corsHeaders, 'Content-Type': 'application/json' },
 })
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const assistantMessageIdFor = (requestId: string) => `${requestId[0] === 'f' ? 'e' : requestId[0] === 'e' ? 'f' : (Number.parseInt(requestId[0], 16) ^ 1).toString(16)}${requestId.slice(1)}`
 const maxMessageLength = 12_000
 const maxHistoryMessages = 20
 const maxHistoryCharacters = 50_000
@@ -71,6 +72,12 @@ type ToolDefinition = { type: 'function'; function: { name: ToolName; descriptio
 type ToolRegistry = { handlers: Record<string, ToolHandler>; definitions: ToolDefinition[] }
 
 const elapsed = (start: number) => Math.max(0, Math.round(performance.now() - start))
+const traceWithDuration = (value: unknown) => {
+  const trace = value && typeof value === 'object' ? value as { steps?: unknown } : {}
+  const steps = Array.isArray(trace.steps) ? trace.steps : []
+  const totalDurationMs = steps.reduce((total, step) => total + (step && typeof step === 'object' && typeof (step as { durationMs?: unknown }).durationMs === 'number' ? (step as { durationMs: number }).durationMs : 0), 0)
+  return { steps, totalDurationMs }
+}
 const normalizeText = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleLowerCase('pt-BR')
 const safeName = (value: unknown, max = 120): value is string => typeof value === 'string' && value.trim().length > 0 && value.length <= max
 const toolError = (message: string) => ({ error: message })
@@ -607,19 +614,31 @@ serve(async (req) => {
     } catch {
       throw new RequestError(400, 'Corpo da requisição inválido')
     }
-    if (Object.keys(payload).some((key) => key !== 'message' && key !== 'conversationId')) {
+    if (Object.keys(payload).some((key) => !['message', 'conversationId', 'requestId'].includes(key))) {
       throw new RequestError(400, 'Corpo da requisição contém campos inválidos')
     }
     if (typeof payload.message !== 'string' || !payload.message.trim() || payload.message.length > maxMessageLength) {
       throw new RequestError(400, 'A mensagem deve ter entre 1 e 12.000 caracteres')
     }
     const message = payload.message.trim()
+    if (typeof payload.requestId !== 'string' || !uuidPattern.test(payload.requestId)) {
+      throw new RequestError(400, 'Identificador da solicitação inválido')
+    }
+    const requestId = payload.requestId
     if (payload.conversationId !== undefined && (typeof payload.conversationId !== 'string' || !uuidPattern.test(payload.conversationId))) {
       throw new RequestError(400, 'Identificador de conversa inválido')
     }
 
+    const priorUserMessage = await serviceClient.from('ai_chat_messages')
+      .select('conversation_id,content').eq('id', requestId).eq('user_id', user.id).eq('role', 'user').maybeSingle()
+    if (priorUserMessage.error) throw new RequestError(500, 'Não foi possível verificar a solicitação')
+    if (priorUserMessage.data && priorUserMessage.data.content !== message) throw new RequestError(409, 'O identificador já foi usado para outra mensagem')
+    if (priorUserMessage.data && payload.conversationId && payload.conversationId !== priorUserMessage.data.conversation_id) {
+      throw new RequestError(409, 'A solicitação já está associada a outra conversa')
+    }
+
     const conversationStarted = performance.now()
-    let conversationId = payload.conversationId as string | undefined
+    let conversationId = (priorUserMessage.data?.conversation_id ?? payload.conversationId) as string | undefined
     let conversationTitle = 'Nova conversa'
     if (conversationId) {
       const { data: conversation, error } = await serviceClient
@@ -644,14 +663,36 @@ serve(async (req) => {
     trace.push({ step: 'conversation', status: 'completed', durationMs: elapsed(conversationStarted) })
 
     const userMessageStarted = performance.now()
-    const { error: userMessageError } = await serviceClient.from('ai_chat_messages').insert({
-      conversation_id: conversationId,
-      user_id: user.id,
-      role: 'user',
-      content: message,
-      metadata: {},
-    })
-    if (userMessageError) throw new RequestError(500, 'Não foi possível salvar sua mensagem')
+    if (!priorUserMessage.data) {
+      const { error: userMessageError } = await serviceClient.from('ai_chat_messages').insert({
+        id: requestId,
+        conversation_id: conversationId,
+        user_id: user.id,
+        role: 'user',
+        content: message,
+        metadata: { requestId },
+      })
+      if (userMessageError) {
+        const { data: duplicateUserMessage, error: duplicateLookupError } = await serviceClient.from('ai_chat_messages')
+          .select('conversation_id,content').eq('id', requestId).eq('user_id', user.id).eq('role', 'user').maybeSingle()
+        if (duplicateLookupError || !duplicateUserMessage) throw new RequestError(500, 'Não foi possível salvar sua mensagem')
+        if (duplicateUserMessage.content !== message) throw new RequestError(409, 'O identificador já foi usado para outra mensagem')
+        conversationId = duplicateUserMessage.conversation_id
+        const { data: existingConversation, error: existingConversationError } = await serviceClient.from('ai_chat_conversations')
+          .select('title').eq('id', conversationId).eq('user_id', user.id).maybeSingle()
+        if (existingConversationError || !existingConversation) throw new RequestError(404, 'Conversa não encontrada')
+        conversationTitle = existingConversation.title
+      }
+    }
+    const { data: existingAssistant, error: existingAssistantError } = await serviceClient.from('ai_chat_messages')
+      .select('id,content,metadata').eq('conversation_id', conversationId).eq('user_id', user.id).eq('role', 'assistant')
+      .eq('metadata->>requestId', requestId).maybeSingle()
+    if (existingAssistantError) throw new RequestError(500, 'Não foi possível verificar a resposta existente')
+    if (existingAssistant) {
+      const metadata = existingAssistant.metadata && typeof existingAssistant.metadata === 'object' ? existingAssistant.metadata as JsonObject : {}
+      return json({ conversationId, message: existingAssistant.content, messageId: existingAssistant.id,
+        blocks: metadata.blocks ?? [], trace: traceWithDuration(metadata.trace), ...(metadata.usage ? { usage: metadata.usage } : {}) })
+    }
     if (conversationTitle === 'Nova conversa') {
       const { count, error: countError } = await serviceClient.from('ai_chat_messages')
         .select('id', { count: 'exact', head: true }).eq('conversation_id', conversationId).eq('user_id', user.id)
@@ -685,6 +726,8 @@ serve(async (req) => {
       const { data: contextRows, error: contextError } = await serviceClient
         .from('ai_chat_model_context')
         .select('message_id, model_messages')
+        .eq('conversation_id', conversationId)
+        .eq('user_id', user.id)
         .in('message_id', assistantMessageIds)
       if (contextError) throw new RequestError(500, 'Não foi possível carregar o contexto interno')
       internalContexts = (contextRows ?? []) as InternalContextRow[]
@@ -771,7 +814,7 @@ serve(async (req) => {
     const blocks = deriveAnalysisBlocks(toolResults, finalText)
 
     const assistantMessageStarted = performance.now()
-    const assistantMessageId = crypto.randomUUID()
+    const assistantMessageId = assistantMessageIdFor(requestId)
     const { data: savedMessage, error: assistantMessageError } = await serviceClient
       .from('ai_chat_messages')
       .insert({
@@ -780,11 +823,19 @@ serve(async (req) => {
         user_id: user.id,
         role: 'assistant',
         content: finalText,
-        metadata: { trace: { steps: trace }, blocks, ...(usage ? { usage } : {}) },
+        metadata: { requestId, trace: { steps: trace }, blocks, ...(usage ? { usage } : {}) },
       })
       .select('id')
       .single()
-    if (assistantMessageError || !savedMessage) throw new RequestError(500, 'Não foi possível salvar a resposta')
+    if (assistantMessageError || !savedMessage) {
+      const { data: duplicateAssistant, error: duplicateAssistantError } = await serviceClient.from('ai_chat_messages')
+        .select('id,content,metadata').eq('id', assistantMessageId).eq('conversation_id', conversationId)
+        .eq('user_id', user.id).eq('role', 'assistant').maybeSingle()
+      if (duplicateAssistantError || !duplicateAssistant) throw new RequestError(500, 'Não foi possível salvar a resposta')
+      const metadata = duplicateAssistant.metadata && typeof duplicateAssistant.metadata === 'object' ? duplicateAssistant.metadata as JsonObject : {}
+      return json({ conversationId, message: duplicateAssistant.content, messageId: duplicateAssistant.id,
+        blocks: metadata.blocks ?? [], trace: traceWithDuration(metadata.trace), ...(metadata.usage ? { usage: metadata.usage } : {}) })
+    }
 
     const { error: contextWriteError } = await serviceClient.from('ai_chat_model_context').insert({
       message_id: savedMessage.id,

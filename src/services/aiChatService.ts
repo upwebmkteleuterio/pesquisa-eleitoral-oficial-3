@@ -64,32 +64,39 @@ export async function deleteConversation(id: string): Promise<void> {
   if (error || !data) throw new Error('Não foi possível excluir a conversa.');
 }
 
-export async function sendMessage(message: string, conversationId?: string): Promise<AiChatResponse> {
+export async function sendMessage(message: string, conversationId: string | undefined, requestId: string, allowAutomaticRetry = true): Promise<AiChatResponse> {
   const normalizedMessage = message.trim();
   if (!normalizedMessage || normalizedMessage.length > 12_000) {
     throw new Error('A mensagem deve ter entre 1 e 12.000 caracteres.');
   }
 
-  const { data, error } = await supabase.functions.invoke('ai-assistant', {
-    body: { message: normalizedMessage, ...(conversationId ? { conversationId } : {}) },
-  });
+  const maxAttempts = allowAutomaticRetry ? 2 : 1;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const { data, error } = await supabase.functions.invoke('ai-assistant', {
+      body: { message: normalizedMessage, requestId, ...(conversationId ? { conversationId } : {}) },
+    });
 
-  if (error) {
-    let serverMessage: string | undefined;
-    const context = error.context;
-    if (context instanceof Response) {
-      try {
-        const body = await context.clone().json() as { error?: unknown };
-        if (typeof body.error === 'string') serverMessage = body.error;
-      } catch {
-        // The function response may not contain JSON.
+    if (error) {
+      const context = error.context;
+      const transient = context instanceof Response ? context.status >= 500 : error.name === 'FunctionsFetchError';
+      let serverMessage: string | undefined;
+      if (context instanceof Response) {
+        try {
+          const body = await context.clone().json() as { error?: unknown };
+          if (typeof body.error === 'string') serverMessage = body.error;
+        } catch {
+          // The function response may not contain JSON.
+        }
       }
+      if (attempt === 0 && transient) continue;
+      throw new Error(serverMessage || 'Não foi possível obter uma resposta da IA. Tente novamente.');
     }
-    throw new Error(serverMessage || 'Não foi possível obter uma resposta da IA. Tente novamente.');
+
+    if (!data || typeof data !== 'object' || typeof data.message !== 'string') {
+      throw new Error('A resposta da IA veio em um formato inválido.');
+    }
+    return data as AiChatResponse;
   }
 
-  if (!data || typeof data !== 'object' || typeof data.message !== 'string') {
-    throw new Error('A resposta da IA veio em um formato inválido.');
-  }
-  return data as AiChatResponse;
+  throw new Error('Não foi possível obter uma resposta da IA. Tente novamente.');
 }

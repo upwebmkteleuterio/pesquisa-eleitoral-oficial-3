@@ -77,9 +77,79 @@ const getHttpStatus = (error: unknown): number | undefined => {
   return typeof status === 'number' ? status : Number(status) || undefined;
 };
 
+const getPostgrestErrorMetadata = (error: unknown) => {
+  if (typeof error !== 'object' || error === null) return {};
+  const candidate = error as Record<string, unknown>;
+  return {
+    code: typeof candidate.code === 'string' ? candidate.code : undefined,
+    message: typeof candidate.message === 'string' ? candidate.message : undefined,
+    details: typeof candidate.details === 'string' ? candidate.details : undefined,
+    hint: typeof candidate.hint === 'string' ? candidate.hint : undefined,
+    status: typeof candidate.status === 'number' ? candidate.status : undefined
+  };
+};
+
 const isPermanentHttpError = (error: unknown): boolean => {
   const status = getHttpStatus(error);
   return status !== undefined && status >= 400 && status < 500;
+};
+
+const PUBLIC_RLS_PREDICATES = [
+  'survey_is_public',
+  'origin_is_web',
+  'researcher_is_null',
+  'audio_storage_path_is_null',
+  'audio_mime_type_is_null',
+  'audio_duration_seconds_is_null',
+  'audio_consent_at_is_null',
+  'audio_consent_state_is_null',
+  'public_insert_policy_passes',
+  'authenticated_insert_policy_passes',
+  'insert_policy_would_allow'
+] as const;
+
+const diagnosePublicSubmissionRls = async (payload: SubmissionRecord): Promise<void> => {
+  const submissionId = payload.id;
+  const surveyId = payload.pesquisa_id;
+  try {
+    const { data, error } = await anonymousSupabase.rpc('diagnose_public_submission_rls', {
+      p_pesquisa_id: payload.pesquisa_id,
+      p_pesquisador_id: payload.pesquisador_id,
+      p_origem: payload.origem,
+      p_audio_storage_path: payload.audio_storage_path,
+      p_audio_mime_type: payload.audio_mime_type,
+      p_audio_duration_seconds: payload.audio_duration_seconds,
+      p_audio_consent_at: payload.audio_consent_at,
+      p_audio_consent_state: payload.audio_consent_state
+    });
+
+    if (error) {
+      console.error('public_submission_rls_preflight_failed', {
+        submissionId,
+        surveyId,
+        ...getPostgrestErrorMetadata(error)
+      });
+      return;
+    }
+
+    const result = Array.isArray(data) ? data[0] : data;
+    const record = typeof result === 'object' && result !== null ? result as Record<string, unknown> : {};
+    console.info('public_submission_rls_preflight', {
+      submissionId,
+      surveyId,
+      jwt_role: typeof record.jwt_role === 'string' ? record.jwt_role : undefined,
+      ...Object.fromEntries(PUBLIC_RLS_PREDICATES.map(predicate => [
+        predicate,
+        typeof record[predicate] === 'boolean' ? record[predicate] : null
+      ]))
+    });
+  } catch (error) {
+    console.error('public_submission_rls_preflight_failed', {
+      submissionId,
+      surveyId,
+      ...getPostgrestErrorMetadata(error)
+    });
+  }
 };
 
 const waitForRetry = (delayMs: number, signal: AbortSignal): Promise<void> => new Promise((resolve, reject) => {
@@ -360,6 +430,7 @@ export const submissionService = {
     };
 
     reportProgress(onProgress, { stage: 'sending-responses', percentage: 50, label: 'Enviando respostas' });
+    if (isPublicSubmission) void diagnosePublicSubmissionRls(payload);
     await withNetworkRetries(async (requestSignal) => {
       const client = isPublicSubmission ? anonymousSupabase : supabase;
       const { error } = await client
@@ -368,7 +439,16 @@ export const submissionService = {
           ? { onConflict: 'id', ignoreDuplicates: true }
           : { onConflict: 'id' })
         .abortSignal(requestSignal);
-      if (error) throw error;
+      if (error) {
+        if (isPublicSubmission) {
+          console.error('public_submission_upsert_failed', {
+            submissionId: submission.id,
+            surveyId: formulario_id,
+            ...getPostgrestErrorMetadata(error)
+          });
+        }
+        throw error;
+      }
     }, signal);
 
     if (!isPublicSubmission && submission.audio?.blob && audioPath) {

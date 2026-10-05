@@ -1,0 +1,1 @@
+REVOKE ALL ON FUNCTION public.diagnose_public_submission_rls(uuid, uuid, text, text, text, integer, timestamp with time zone, text) FROM PUBLIC

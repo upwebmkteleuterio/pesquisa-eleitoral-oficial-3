@@ -1,5 +1,5 @@
 import localforage from "localforage";
-import { supabase } from "@/src/integrations/supabase/client";
+import { anonymousSupabase, supabase } from "@/src/integrations/supabase/client";
 import { getAudioExtension } from "./audioService";
 import { Submission, SubmissionEdits, SubmissionProgress, SubmissionProgressCallback } from "../types";
 import { normalizeBrazilianPhone } from "../utils/phoneUtils";
@@ -329,13 +329,14 @@ export const submissionService = {
     if (!navigator.onLine) throw new Error('offline');
 
     const { dados_fixos, respostas_dinamicas, geolocalizacao, data_coleta, formulario_id, pesquisador_id, nome_entrevistado, bairro, telefone, origem, referenciado_por } = submission;
-    const audioPath = submission.audio?.blob
+    const isPublicSubmission = pesquisador_id === 'anonymous' || origem === 'web';
+    const audioPath = !isPublicSubmission && submission.audio?.blob
       ? `${pesquisador_id}/${submission.id}.${getAudioExtension(submission.audio.mime_type)}`
-      : submission.audio?.storage_path;
+      : !isPublicSubmission ? submission.audio?.storage_path : undefined;
     const payload = {
       id: submission.id,
       pesquisa_id: formulario_id,
-      pesquisador_id: pesquisador_id === 'anonymous' ? null : pesquisador_id,
+      pesquisador_id: isPublicSubmission ? null : pesquisador_id,
       nome_entrevistado,
       telefone,
       bairro,
@@ -349,25 +350,30 @@ export const submissionService = {
       geolocalizacao,
       data_coleta,
       valida: submission.valida ?? true,
-      origem: origem || 'app',
+      origem: isPublicSubmission ? 'web' : origem || 'app',
       referenciado_por,
-      audio_storage_path: audioPath,
-      audio_mime_type: submission.audio?.mime_type,
-      audio_duration_seconds: submission.audio?.duration_seconds,
-      audio_consent_at: submission.audio?.consent_at,
-      audio_consent_state: submission.audio?.consent_state
+      ...(!isPublicSubmission ? {
+        audio_storage_path: audioPath,
+        audio_mime_type: submission.audio?.mime_type,
+        audio_duration_seconds: submission.audio?.duration_seconds,
+        audio_consent_at: submission.audio?.consent_at,
+        audio_consent_state: submission.audio?.consent_state
+      } : {})
     };
 
     reportProgress(onProgress, { stage: 'sending-responses', percentage: 50, label: 'Enviando respostas' });
     await withNetworkRetries(async (requestSignal) => {
-      const { error } = await supabase
+      const client = isPublicSubmission ? anonymousSupabase : supabase;
+      const { error } = await client
         .from('submissoes')
-        .upsert(payload, { onConflict: 'id' })
+        .upsert(payload, isPublicSubmission
+          ? { onConflict: 'id', ignoreDuplicates: true }
+          : { onConflict: 'id' })
         .abortSignal(requestSignal);
       if (error) throw error;
     }, signal);
 
-    if (submission.audio?.blob && audioPath) {
+    if (!isPublicSubmission && submission.audio?.blob && audioPath) {
       reportProgress(onProgress, { stage: 'sending-audio', percentage: 75, label: 'Enviando áudio' });
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user || user.id !== pesquisador_id) {

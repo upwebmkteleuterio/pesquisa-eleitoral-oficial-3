@@ -434,15 +434,13 @@ export const submissionService = {
     if (isPublicSubmission) void diagnosePublicSubmissionRls(payload);
     await withNetworkRetries(async (requestSignal) => {
       const client = isPublicSubmission ? anonymousSupabase : supabase;
-      const { error } = await client
-        .from('submissoes')
-        .upsert(payload, isPublicSubmission
-          ? { onConflict: 'id', ignoreDuplicates: true }
-          : { onConflict: 'id' })
-        .abortSignal(requestSignal);
+      const { error } = isPublicSubmission
+        ? await client.from('submissoes').insert(payload).abortSignal(requestSignal)
+        : await client.from('submissoes').upsert(payload, { onConflict: 'id' }).abortSignal(requestSignal);
       if (error) {
+        if (isPublicSubmission && getPostgrestErrorMetadata(error).code === '23505') return;
         if (isPublicSubmission) {
-          console.error('public_submission_upsert_failed', {
+          console.error('public_submission_insert_failed', {
             submissionId: submission.id,
             surveyId: formulario_id,
             ...getPostgrestErrorMetadata(error)

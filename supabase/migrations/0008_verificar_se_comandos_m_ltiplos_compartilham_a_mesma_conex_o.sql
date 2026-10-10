@@ -1,0 +1,1 @@
+CREATE TEMP TABLE __conn_probe(x int); INSERT INTO __conn_probe VALUES (1); SELECT count(*) AS n FROM __conn_probe;

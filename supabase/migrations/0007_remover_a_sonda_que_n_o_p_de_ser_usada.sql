@@ -1,0 +1,1 @@
+DROP FUNCTION public.__probe_public_insert(text)

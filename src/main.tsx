@@ -13,6 +13,8 @@ let serviceWorkerRegistration: ServiceWorkerRegistration | undefined;
 let hadController = Boolean(serviceWorkerContainer?.controller);
 let reloadStarted = false;
 
+const UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+
 const updateRegisteredServiceWorker = () => {
   if (navigator.onLine) {
     void serviceWorkerRegistration?.update().catch(() => undefined);
@@ -20,6 +22,12 @@ const updateRegisteredServiceWorker = () => {
 };
 
 window.addEventListener('online', updateRegisteredServiceWorker);
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') updateRegisteredServiceWorker();
+});
+
+window.setInterval(updateRegisteredServiceWorker, UPDATE_CHECK_INTERVAL_MS);
 
 serviceWorkerContainer?.addEventListener('controllerchange', () => {
   if (!hadController) {

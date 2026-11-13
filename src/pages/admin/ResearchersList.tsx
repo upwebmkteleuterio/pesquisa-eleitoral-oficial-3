@@ -52,9 +52,9 @@ export default function ResearchersList() {
   const otherResearchers = researchers?.filter(r => r.id !== researcherToDelete?.id);
 
   const filteredResearchers = researchers?.filter(r => 
-    r.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    r.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    r.cpf.includes(searchTerm)
+    (r.nome ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (r.email ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (r.cpf ?? "").includes(searchTerm)
   );
 
   const handleEdit = (researcher: Researcher) => {

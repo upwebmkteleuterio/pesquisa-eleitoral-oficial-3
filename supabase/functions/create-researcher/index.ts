@@ -29,7 +29,36 @@ serve(async (req) => {
       throw new Error('Apenas administradores podem criar pesquisadores')
     }
 
-    const { email, password, nome, cpf } = await req.json()
+    const { id, email, password, nome, cpf } = await req.json()
+
+    if (id) {
+      const { data: target, error: targetError } = await supabaseClient
+        .from('profiles')
+        .select('id')
+        .eq('id', id)
+        .eq('role', 'pesquisador')
+        .single()
+
+      if (targetError || !target) throw new Error('Colaborador não encontrado')
+
+      console.log("[create-researcher] Atualizando usuário:", id)
+
+      if (typeof password === 'string' && password.trim()) {
+        const { error: updateError } = await supabaseClient.auth.admin.updateUserById(id, { password })
+        if (updateError) throw updateError
+      }
+
+      const { error: profileError } = await supabaseClient
+        .from('profiles')
+        .upsert({ id, nome, email, cpf })
+
+      if (profileError) throw profileError
+
+      return new Response(JSON.stringify({ success: true, id }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      })
+    }
 
     console.log("[create-researcher] Iniciando criação de usuário:", email)
 

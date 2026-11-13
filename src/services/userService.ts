@@ -102,11 +102,12 @@ export const userService = {
   },
 
   async saveResearcher(researcher: Partial<Researcher> & { password?: string }): Promise<any> {
-    if (researcher.password && !researcher.id) {
+    if (typeof researcher.password === 'string' && researcher.password.trim()) {
       const { data, error } = await supabase.functions.invoke('create-researcher', {
-        body: { 
-          email: researcher.email, 
-          password: researcher.password, 
+        body: {
+          id: researcher.id,
+          email: researcher.email,
+          password: researcher.password,
           nome: researcher.nome,
           cpf: researcher.cpf
         }
@@ -115,9 +116,10 @@ export const userService = {
       return data;
     }
 
+    const { password, ...profile } = researcher;
     const { data, error } = await supabase
       .from('profiles')
-      .upsert(researcher)
+      .upsert(profile)
       .select()
       .single();
     

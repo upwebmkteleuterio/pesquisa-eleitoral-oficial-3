@@ -14,6 +14,9 @@ export interface AudioRecordingSession {
 
 const AUDIO_DURATION_MS = 120_000;
 const MINIMUM_AUDIO_DURATION_MS = 119_500;
+const AUDIO_STOP_GRACE_MS = 5_000;
+const AUDIO_WATCHDOG_INTERVAL_MS = 1_000;
+const AUDIO_TIMESLICE_MS = 1_000;
 const preferredMimeTypes = [
   'audio/webm;codecs=opus',
   'audio/webm',
@@ -59,7 +62,7 @@ export async function startAudioRecording(consentAt: string): Promise<AudioRecor
   const chunks: Blob[] = [];
   const startedAt = Date.now();
   let finished = false;
-  let timer: number | undefined;
+  let watchdog: number | undefined;
   let resolveCompleted!: (result: AudioRecordingResult) => void;
   let rejectCompleted!: (error: Error) => void;
   const completed = new Promise<AudioRecordingResult>((resolve, reject) => {
@@ -67,9 +70,31 @@ export async function startAudioRecording(consentAt: string): Promise<AudioRecor
     rejectCompleted = reject;
   });
 
+  const buildResult = (): AudioRecordingResult | null => {
+    const finalMimeType = recorder.mimeType || mimeType || 'audio/webm';
+    const blob = new Blob(chunks, { type: finalMimeType });
+    if (blob.size === 0) return null;
+    return { blob, mimeType: finalMimeType, durationSeconds: 120 };
+  };
+
   const cleanup = () => {
-    if (timer) window.clearTimeout(timer);
+    if (watchdog) window.clearInterval(watchdog);
+    document.removeEventListener('visibilitychange', handleVisibility);
     stream.getTracks().forEach(track => track.stop());
+  };
+
+  // Fecha a gravação mesmo quando o sistema suspende o app e o gravador
+  // nunca avisa que parou, para a tela de finalização nunca esperar para sempre.
+  const forceComplete = () => {
+    if (finished) return;
+    finished = true;
+    cleanup();
+    const result = buildResult();
+    if (!result) {
+      rejectCompleted(new Error('recording-failed'));
+      return;
+    }
+    resolveCompleted(result);
   };
 
   const fail = (error: Error) => {
@@ -78,6 +103,24 @@ export async function startAudioRecording(consentAt: string): Promise<AudioRecor
     cleanup();
     rejectCompleted(error);
   };
+
+  function handleVisibility() {
+    if (document.visibilityState === 'visible') checkDeadline();
+  }
+
+  function checkDeadline() {
+    if (finished) return;
+    const elapsed = Date.now() - startedAt;
+    if (elapsed >= AUDIO_DURATION_MS && recorder.state === 'recording') {
+      try {
+        recorder.stop();
+      } catch {
+        forceComplete();
+        return;
+      }
+    }
+    if (elapsed >= AUDIO_DURATION_MS + AUDIO_STOP_GRACE_MS) forceComplete();
+  }
 
   recorder.ondataavailable = event => {
     if (event.data.size > 0) chunks.push(event.data);
@@ -92,13 +135,12 @@ export async function startAudioRecording(consentAt: string): Promise<AudioRecor
       rejectCompleted(new Error('recording-interrupted'));
       return;
     }
-    const finalMimeType = recorder.mimeType || mimeType || 'audio/webm';
-    const blob = new Blob(chunks, { type: finalMimeType });
-    if (blob.size === 0) {
+    const result = buildResult();
+    if (!result) {
       rejectCompleted(new Error('recording-failed'));
       return;
     }
-    resolveCompleted({ blob, mimeType: finalMimeType, durationSeconds: 120 });
+    resolveCompleted(result);
   };
 
   const interrupt = () => {
@@ -108,6 +150,7 @@ export async function startAudioRecording(consentAt: string): Promise<AudioRecor
         recorder.stop();
       } catch {
         fail(new Error('recording-interrupted'));
+        return;
       }
     }
     fail(new Error('recording-interrupted'));
@@ -118,14 +161,19 @@ export async function startAudioRecording(consentAt: string): Promise<AudioRecor
   });
 
   try {
-    recorder.start();
-    timer = window.setTimeout(() => {
-      if (recorder.state === 'recording') recorder.stop();
-    }, AUDIO_DURATION_MS);
+    recorder.start(AUDIO_TIMESLICE_MS);
   } catch {
     cleanup();
     throw new Error('recording-failed');
   }
+
+  if (recorder.state !== 'recording') {
+    cleanup();
+    throw new Error('recording-failed');
+  }
+
+  watchdog = window.setInterval(checkDeadline, AUDIO_WATCHDOG_INTERVAL_MS);
+  document.addEventListener('visibilitychange', handleVisibility);
 
   return {
     completed,
